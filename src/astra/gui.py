@@ -9,7 +9,8 @@ from typing import Callable, Sequence
 
 from .cli import run_cli
 from .config import AstraConfig
-from .outputs import ensure_output_dirs, open_outputs_directory
+from .models import WorkflowContentItem
+from .outputs import ensure_output_dirs, load_content_item, load_publish_log, open_outputs_directory
 from .tendril.settings import TendrilSettings
 
 
@@ -31,6 +32,17 @@ class GuiCommandResult:
     def display_text(self) -> str:
         parts = [part for part in (self.output.strip(), self.error.strip()) if part]
         return "\n\n".join(parts) or f"Command finished with exit code {self.exit_code}."
+
+
+@dataclass(slots=True)
+class DashboardItem:
+    item_id: str
+    topic: str
+    platform: str
+    status: str
+    safety: str
+    path: Path
+    created_at: str
 
 
 def run_cli_capture(argv: Sequence[str], *, cli_runner: CliRunner = run_cli) -> GuiCommandResult:
@@ -122,6 +134,21 @@ def review_queue_args() -> list[str]:
     return ["review-queue"]
 
 
+def approve_item_args(path: str | Path) -> list[str]:
+    return ["approve", "--input", str(path)]
+
+
+def queue_item_args(path: str | Path, slot: str = "afternoon") -> list[str]:
+    return ["queue", "--input", str(path), "--slot", slot]
+
+
+def mark_posted_args(path_or_id: str | Path) -> list[str]:
+    value = str(path_or_id).strip()
+    if any(separator in value for separator in ("\\", "/", ":")):
+        return ["mark-posted", "--input", value]
+    return ["mark-posted", "--id", value]
+
+
 def accounts_status_args() -> list[str]:
     return ["accounts", "status"]
 
@@ -157,6 +184,120 @@ def latest_batch_dir() -> Path | None:
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
+def load_dashboard_items(kind: str = "drafts", *, base_dir: Path | None = None) -> list[DashboardItem]:
+    directories = ensure_output_dirs(base_dir)
+    paths: list[Path] = []
+    if kind in {"drafts", "review"}:
+        paths = sorted(directories["batches"].rglob("*.json"))
+    elif kind == "approved":
+        paths = sorted(directories["approved"].glob("*.json"))
+    elif kind in {"queue", "queued"}:
+        paths = sorted(directories["queue"].glob("*.json"))
+    elif kind == "posted":
+        paths = sorted(directories["posted"].glob("*.json"))
+    elif kind == "all":
+        paths = [
+            *sorted(directories["batches"].rglob("*.json")),
+            *sorted(directories["approved"].glob("*.json")),
+            *sorted(directories["queue"].glob("*.json")),
+            *sorted(directories["posted"].glob("*.json")),
+        ]
+    else:
+        raise ValueError(f"Unknown dashboard item kind: {kind}")
+    items: list[DashboardItem] = []
+    for path in paths:
+        try:
+            item = load_content_item(path)
+        except (OSError, ValueError):
+            continue
+        if kind in {"drafts", "review"} and item.status != "draft":
+            continue
+        if item.safety.decision == "DISCARD":
+            continue
+        items.append(_dashboard_item_from_workflow_item(item, path))
+    return items
+
+
+def item_summary_rows(kind: str = "drafts", *, base_dir: Path | None = None) -> list[tuple[str, str, str, str, str, str]]:
+    return [
+        (item.item_id, item.platform, item.status, item.safety, item.topic, str(item.path))
+        for item in load_dashboard_items(kind, base_dir=base_dir)
+    ]
+
+
+def format_item_inspector(path: str | Path) -> str:
+    item = load_content_item(path)
+    hashtags = " ".join(item.hashtags) if item.hashtags else "None"
+    script = "\n".join(item.script_lines)
+    reasons = "; ".join(item.safety.reasons) if item.safety.reasons else "Aligned"
+    return "\n".join(
+        [
+            f"ID: {item.id}",
+            f"Topic: {item.topic}",
+            f"Platform: {item.platform}",
+            f"Status: {item.status}",
+            f"Safety: {item.safety.decision}",
+            f"Created: {item.created_at}",
+            f"Source: {item.source_item_id or 'None'}",
+            "",
+            "Hook:",
+            item.hook,
+            "",
+            "Body:",
+            script,
+            "",
+            "Caption:",
+            item.caption,
+            "",
+            f"Hashtags: {hashtags}",
+            f"Suggested time: {item.suggested_post_time}",
+            "",
+            "Platform notes:",
+            item.platform_notes or "None",
+            "",
+            "Safety reasons:",
+            reasons,
+            "",
+            f"File: {Path(path)}",
+        ]
+    )
+
+
+def item_action_state(path: str | Path) -> dict[str, bool]:
+    item = load_content_item(path)
+    safety_pass = item.safety.decision == "PASS"
+    return {
+        "approve": item.status == "draft" and safety_pass,
+        "queue": item.status == "approved" and safety_pass,
+        "publish": item.status == "queued" and item.platform in {"x_bluesky", "bluesky"} and safety_pass,
+        "mark_posted": item.status == "queued",
+        "open_file": True,
+    }
+
+
+def settings_status_lines(config: AstraConfig | None = None) -> list[str]:
+    loaded = config or AstraConfig.load()
+    return [
+        f"OpenAI API key: {'configured' if bool(loaded.api_key) else 'missing'}",
+        f"Bluesky handle: {'configured' if bool(loaded.bluesky_posting.handle) else 'missing'}",
+        f"Bluesky app password: {'configured' if bool(loaded.bluesky_posting.app_password) else 'missing'}",
+        f"Bluesky service URL: {loaded.bluesky_posting.service_url}",
+        "Secrets are read from environment variables and are not displayed.",
+    ]
+
+
+def _dashboard_item_from_workflow_item(item: WorkflowContentItem, path: Path) -> DashboardItem:
+    return DashboardItem(
+        item_id=item.id,
+        topic=item.topic,
+        platform=item.platform,
+        status=item.status,
+        safety=item.safety.decision,
+        path=path,
+        created_at=item.created_at,
+    )
+
+
 class AstraGuiApp:
     def __init__(
         self,
@@ -177,14 +318,18 @@ class AstraGuiApp:
         self.reply_scenario_var = tk.StringVar(value="skeptical_user")
         self.count_var = tk.IntVar(value=5)
         self.status_var = tk.StringVar(value="Ready.")
+        self.account_status_var = tk.StringVar(value="Accounts: checking...")
+        self.queue_status_var = tk.StringVar(value="Queue: 0")
+        self.current_item_path: Path | None = None
+        self.current_tree_kind = "drafts"
 
         self._build_ui()
 
     def _build_ui(self) -> None:
         self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(2, weight=1)
+        self.root.rowconfigure(1, weight=1)
 
-        header = ttk.Frame(self.root, padding=(14, 12, 14, 4))
+        header = ttk.Frame(self.root, padding=(14, 12, 14, 6))
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
         ttk.Label(header, text="Astra", font=("Segoe UI", 18, "bold")).grid(row=0, column=0, sticky="w")
@@ -193,9 +338,40 @@ class AstraGuiApp:
             text="PR and marketing operator for LinnuteeInnovations",
             font=("Segoe UI", 10),
         ).grid(row=1, column=0, sticky="w")
+        ttk.Label(header, textvariable=self.account_status_var, font=("Segoe UI", 9)).grid(row=0, column=1, sticky="e")
+        ttk.Label(header, textvariable=self.queue_status_var, font=("Segoe UI", 9)).grid(row=1, column=1, sticky="e")
 
-        controls = ttk.Frame(self.root, padding=(14, 6))
-        controls.grid(row=1, column=0, sticky="ew")
+        dashboard = ttk.Frame(self.root, padding=(12, 0, 12, 6))
+        dashboard.grid(row=1, column=0, sticky="nsew")
+        dashboard.columnconfigure(1, weight=1)
+        dashboard.rowconfigure(0, weight=1)
+
+        self.nav_frame = ttk.Frame(dashboard, padding=(0, 6, 10, 0))
+        self.nav_frame.grid(row=0, column=0, sticky="nsw")
+
+        self.notebook = ttk.Notebook(dashboard)
+        self.notebook.grid(row=0, column=1, sticky="nsew")
+
+        self._build_create_tab()
+        self._build_workflow_tab("Review", "drafts")
+        self._build_workflow_tab("Queue", "queue")
+        self._build_publish_tab()
+        self._build_logs_tab()
+        self._build_settings_tab()
+        self._build_left_navigation()
+
+        status = ttk.Label(self.root, textvariable=self.status_var, relief="sunken", anchor="w", padding=(8, 4))
+        status.grid(row=2, column=0, sticky="ew")
+        self.refresh_dashboard()
+
+    def _build_left_navigation(self) -> None:
+        for index, label in enumerate(("Create", "Review", "Queue", "Publish", "Logs", "Settings")):
+            button = ttk.Button(self.nav_frame, text=label, command=lambda tab=index: self.notebook.select(tab))
+            button.grid(row=index, column=0, sticky="ew", pady=(0, 6))
+
+    def _build_create_tab(self) -> None:
+        controls = ttk.Frame(self.notebook, padding=(14, 12))
+        self.notebook.add(controls, text="Create")
         controls.columnconfigure(0, weight=1)
         controls.columnconfigure(5, weight=0)
 
@@ -230,28 +406,10 @@ class AstraGuiApp:
         ttk.Button(controls, text="Campaign", command=self.run_campaign).grid(row=2, column=4, sticky="w", padx=(0, 8))
         ttk.Button(controls, text="Draft Posts", command=self.run_posts).grid(row=2, column=5, sticky="e")
 
-        quick = ttk.Frame(self.root, padding=(14, 0, 14, 6))
-        quick.grid(row=3, column=0, sticky="ew")
-        for index in range(11):
-            quick.columnconfigure(index, weight=1)
-        buttons = [
-            ("Accounts", lambda: self.run_command(accounts_status_args())),
-            ("Publish Bluesky", lambda: self.run_command(publish_queue_args("bluesky"))),
-            ("Publish Log", lambda: self.run_command(publish_log_args())),
-            ("Publish Item", self.run_publish_item),
-            ("Review Drafts", lambda: self.run_command(review_drafts_args())),
-            ("Review Queue", lambda: self.run_command(review_queue_args())),
-            ("Market Log", lambda: self.run_command(market_log_args(save=True))),
-            ("Tendril Tasks", lambda: self.run_command(tendril_list_args())),
-            ("Open Outputs", self.open_outputs),
-            ("Open Feedback", lambda: self.open_output_kind("feedback")),
-            ("Open Experiments", lambda: self.open_output_kind("experiments")),
-        ]
-        for column, (label, command) in enumerate(buttons):
-            ttk.Button(quick, text=label, command=command).grid(row=0, column=column, sticky="ew", padx=2)
-
         output_frame = ttk.Frame(self.root, padding=(14, 0, 14, 6))
-        output_frame.grid(row=2, column=0, sticky="nsew")
+        output_frame = ttk.Frame(controls, padding=(0, 12, 0, 0))
+        output_frame.grid(row=3, column=0, columnspan=6, sticky="nsew")
+        controls.rowconfigure(3, weight=1)
         output_frame.columnconfigure(0, weight=1)
         output_frame.rowconfigure(0, weight=1)
         self.output_text = tk.Text(output_frame, wrap="word", font=("Consolas", 10))
@@ -260,8 +418,88 @@ class AstraGuiApp:
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.output_text.configure(yscrollcommand=scrollbar.set)
 
-        status = ttk.Label(self.root, textvariable=self.status_var, relief="sunken", anchor="w", padding=(8, 4))
-        status.grid(row=4, column=0, sticky="ew")
+    def _build_workflow_tab(self, label: str, kind: str) -> None:
+        frame = ttk.Frame(self.notebook, padding=(8, 8))
+        self.notebook.add(frame, text=label)
+        frame.columnconfigure(0, weight=2)
+        frame.columnconfigure(1, weight=3)
+        frame.rowconfigure(1, weight=1)
+        toolbar = ttk.Frame(frame)
+        toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        ttk.Button(toolbar, text="Refresh", command=lambda k=kind: self.refresh_items(k)).pack(side="left", padx=(0, 6))
+        if kind == "queue":
+            ttk.Button(toolbar, text="Publish Bluesky Queue", command=lambda: self.run_command(publish_queue_args("bluesky"))).pack(side="left", padx=(0, 6))
+        ttk.Button(toolbar, text="Open Outputs", command=self.open_outputs).pack(side="right")
+
+        tree = ttk.Treeview(frame, columns=("platform", "status", "safety", "topic", "path"), show="headings", height=14)
+        tree.heading("platform", text="Platform")
+        tree.heading("status", text="Status")
+        tree.heading("safety", text="Safety")
+        tree.heading("topic", text="Topic")
+        tree.heading("path", text="Path")
+        tree.column("platform", width=110, stretch=False)
+        tree.column("status", width=90, stretch=False)
+        tree.column("safety", width=80, stretch=False)
+        tree.column("topic", width=320, stretch=True)
+        tree.column("path", width=0, stretch=False)
+        tree.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+        tree.bind("<<TreeviewSelect>>", lambda _event, k=kind: self.on_item_selected(k))
+        setattr(self, f"{kind}_tree", tree)
+
+        inspector = self._make_inspector(frame)
+        inspector["frame"].grid(row=1, column=1, sticky="nsew")
+        setattr(self, f"{kind}_inspector", inspector)
+
+    def _build_publish_tab(self) -> None:
+        frame = ttk.Frame(self.notebook, padding=(12, 12))
+        self.notebook.add(frame, text="Publish")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(1, weight=1)
+        controls = ttk.Frame(frame)
+        controls.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        ttk.Button(controls, text="Account Status", command=lambda: self.run_command(accounts_status_args())).pack(side="left", padx=(0, 6))
+        ttk.Button(controls, text="Publish Bluesky Queue", command=lambda: self.run_command(publish_queue_args("bluesky"))).pack(side="left", padx=(0, 6))
+        ttk.Button(controls, text="Refresh Log", command=self.refresh_publish_log).pack(side="left")
+        self.publish_log_text = tk.Text(frame, wrap="word", font=("Consolas", 10))
+        self.publish_log_text.grid(row=1, column=0, sticky="nsew")
+
+    def _build_logs_tab(self) -> None:
+        frame = ttk.Frame(self.notebook, padding=(12, 12))
+        self.notebook.add(frame, text="Logs")
+        for index in range(5):
+            frame.columnconfigure(index, weight=1)
+        ttk.Button(frame, text="Create Market Log", command=lambda: self.run_command(market_log_args(save=True))).grid(row=0, column=0, sticky="ew", padx=3)
+        ttk.Button(frame, text="Open Logs", command=lambda: self.open_output_kind("logs")).grid(row=0, column=1, sticky="ew", padx=3)
+        ttk.Button(frame, text="Open Feedback", command=lambda: self.open_output_kind("feedback")).grid(row=0, column=2, sticky="ew", padx=3)
+        ttk.Button(frame, text="Open Experiments", command=lambda: self.open_output_kind("experiments")).grid(row=0, column=3, sticky="ew", padx=3)
+        ttk.Button(frame, text="Tendril Tasks", command=lambda: self.run_command(tendril_list_args())).grid(row=0, column=4, sticky="ew", padx=3)
+
+    def _build_settings_tab(self) -> None:
+        frame = ttk.Frame(self.notebook, padding=(12, 12))
+        self.notebook.add(frame, text="Settings")
+        frame.columnconfigure(0, weight=1)
+        self.settings_text = tk.Text(frame, wrap="word", font=("Consolas", 10), height=12)
+        self.settings_text.grid(row=0, column=0, sticky="nsew")
+        ttk.Button(frame, text="Refresh Settings", command=self.refresh_settings).grid(row=1, column=0, sticky="w", pady=(8, 0))
+
+    def _make_inspector(self, parent: ttk.Frame) -> dict[str, object]:
+        frame = ttk.Frame(parent)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        text = tk.Text(frame, wrap="word", font=("Consolas", 10), height=18)
+        text.grid(row=0, column=0, sticky="nsew")
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        actions = {
+            "approve": ttk.Button(buttons, text="Approve", command=self.approve_selected_item),
+            "queue": ttk.Button(buttons, text="Queue", command=self.queue_selected_item),
+            "publish": ttk.Button(buttons, text="Publish", command=self.publish_selected_item),
+            "mark_posted": ttk.Button(buttons, text="Mark Posted", command=self.mark_selected_posted),
+            "open_file": ttk.Button(buttons, text="Open File", command=self.open_selected_file),
+        }
+        for button in actions.values():
+            button.pack(side="left", padx=(0, 4))
+        return {"frame": frame, "text": text, "actions": actions}
 
     def run_request(self) -> None:
         request = self.request_text.get("1.0", "end").strip()
@@ -329,6 +567,7 @@ class AstraGuiApp:
         self.root.update_idletasks()
         result = run_cli_capture(args, cli_runner=self.cli_runner)
         self.show_message(result.display_text, ok=result.ok)
+        self.refresh_dashboard()
 
     def show_message(self, message: str, *, ok: bool = True) -> None:
         self.output_text.delete("1.0", "end")
@@ -362,6 +601,95 @@ class AstraGuiApp:
         path.mkdir(parents=True, exist_ok=True)
         self.open_path(path)
         self.show_message(f"Tendril folder: {path}")
+
+    def refresh_dashboard(self) -> None:
+        self.refresh_items("drafts")
+        self.refresh_items("queue")
+        self.refresh_publish_log()
+        self.refresh_settings()
+        queue_count = len(load_dashboard_items("queue"))
+        self.queue_status_var.set(f"Queue: {queue_count}")
+        status = run_cli_capture(accounts_status_args(), cli_runner=self.cli_runner)
+        summary = status.display_text.splitlines()[0] if status.display_text.splitlines() else "unknown"
+        self.account_status_var.set(f"Accounts: {summary}")
+
+    def refresh_items(self, kind: str) -> None:
+        tree = getattr(self, f"{kind}_tree")
+        for row in tree.get_children():
+            tree.delete(row)
+        for row in item_summary_rows(kind):
+            item_id, platform, status, safety, topic, path = row
+            tree.insert("", "end", iid=path, values=(platform, status, safety, topic, path))
+        inspector = getattr(self, f"{kind}_inspector")
+        text: tk.Text = inspector["text"]
+        text.delete("1.0", "end")
+        text.insert("1.0", "Select an item to inspect it.")
+        self._set_inspector_actions(inspector, {})
+
+    def on_item_selected(self, kind: str) -> None:
+        tree = getattr(self, f"{kind}_tree")
+        selection = tree.selection()
+        if not selection:
+            return
+        path = Path(selection[0])
+        self.current_item_path = path
+        self.current_tree_kind = kind
+        inspector = getattr(self, f"{kind}_inspector")
+        text: tk.Text = inspector["text"]
+        text.delete("1.0", "end")
+        try:
+            text.insert("1.0", format_item_inspector(path))
+            self._set_inspector_actions(inspector, item_action_state(path))
+        except (OSError, ValueError) as exc:
+            text.insert("1.0", str(exc))
+            self._set_inspector_actions(inspector, {})
+
+    def approve_selected_item(self) -> None:
+        if self.current_item_path:
+            self.run_command(approve_item_args(self.current_item_path))
+
+    def queue_selected_item(self) -> None:
+        if self.current_item_path:
+            self.run_command(queue_item_args(self.current_item_path))
+
+    def publish_selected_item(self) -> None:
+        if self.current_item_path:
+            self.run_command(publish_item_args(str(self.current_item_path)))
+
+    def mark_selected_posted(self) -> None:
+        if self.current_item_path:
+            self.run_command(mark_posted_args(self.current_item_path))
+
+    def open_selected_file(self) -> None:
+        if self.current_item_path:
+            self.open_path(self.current_item_path)
+            self.show_message(f"Opened: {self.current_item_path}")
+
+    def refresh_publish_log(self) -> None:
+        if not hasattr(self, "publish_log_text"):
+            return
+        results = load_publish_log()
+        text = self.publish_log_text
+        text.delete("1.0", "end")
+        if not results:
+            text.insert("1.0", "Publish log is empty.")
+            return
+        lines = []
+        for result in results:
+            target = result.external_url or result.external_id or result.error or "no target"
+            lines.append(f"{result.published_at} | {result.platform} | {result.status} | {result.item_id} | {target}")
+        text.insert("1.0", "\n".join(lines))
+
+    def refresh_settings(self) -> None:
+        if not hasattr(self, "settings_text"):
+            return
+        self.settings_text.delete("1.0", "end")
+        self.settings_text.insert("1.0", "\n".join(settings_status_lines()))
+
+    def _set_inspector_actions(self, inspector: dict[str, object], states: dict[str, bool]) -> None:
+        actions: dict[str, ttk.Button] = inspector["actions"]
+        for name, button in actions.items():
+            button.configure(state="normal" if states.get(name, False) else "disabled")
 
 
 def main() -> int:
