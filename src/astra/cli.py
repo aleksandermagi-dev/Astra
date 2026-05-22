@@ -37,6 +37,7 @@ from .models import (
 )
 from .outputs import (
     append_analytics_log,
+    load_publish_log,
     approve_content_item,
     create_batch_run_dir,
     find_content_item_path,
@@ -53,6 +54,7 @@ from .outputs import (
     write_content_item,
 )
 from .production import ProductionPipeline, ProductionPipelineError
+from .publisher import PublishingService
 from .safety_layer import AstraSafetyLayer
 from .service import AstraGenerator
 from .tendril import TendrilService
@@ -75,6 +77,10 @@ KNOWN_COMMANDS = {
     "replies",
     "feedback",
     "experiments",
+    "accounts",
+    "publish",
+    "publish-queue",
+    "publish-log",
     "review-drafts",
     "approve",
     "queue",
@@ -159,6 +165,19 @@ def build_parser() -> argparse.ArgumentParser:
     experiments_suggest = experiments_subparsers.add_parser("suggest", help="Suggest experiments from market response")
     experiments_suggest.add_argument("--product", default=None)
     experiments_suggest.add_argument("--input", required=True)
+
+    accounts_parser = subparsers.add_parser("accounts", help="Inspect publishing account connectors")
+    accounts_subparsers = accounts_parser.add_subparsers(dest="accounts_command", required=True)
+    accounts_subparsers.add_parser("status", help="Show account connector status")
+
+    publish_parser = subparsers.add_parser("publish", help="Publish one approved or queued item")
+    publish_parser.add_argument("--input")
+    publish_parser.add_argument("--id")
+
+    publish_queue_parser = subparsers.add_parser("publish-queue", help="Publish queued approved items")
+    publish_queue_parser.add_argument("--platform", choices=["bluesky"], default="bluesky")
+
+    subparsers.add_parser("publish-log", help="Show publish audit log")
 
     approve_parser = subparsers.add_parser("approve", help="Approve a draft item")
     approve_parser.add_argument("--input")
@@ -260,6 +279,9 @@ def run_cli(
         if args.command == "products":
             config = AstraConfig.load(getattr(args, "config", None))
             return _run_products_command(args, config)
+
+        if args.command in {"accounts", "publish", "publish-queue", "publish-log"}:
+            return _run_publish_command(args)
 
         if args.command in {"feedback", "experiments"}:
             return _run_signal_command(args)
@@ -482,6 +504,53 @@ def _run_signal_command(args: argparse.Namespace) -> int:
     saved_path = save_generated_output(content=rendered, topic="market experiments", kind="experiments", extension="md")
     print(f"\nSaved experiment suggestions: {saved_path}")
     return 0
+
+
+def _run_publish_command(args: argparse.Namespace) -> int:
+    if args.command == "publish-log":
+        results = load_publish_log()
+        if not results:
+            print("Publish log is empty.")
+            return 0
+        for result in results:
+            print(_format_publish_result(result))
+        return 0
+
+    service = PublishingService()
+    if args.command == "accounts":
+        status = service.accounts_status()
+        for platform, value in status.items():
+            print(f"{platform}: {value}")
+        return 0
+
+    if args.command == "publish":
+        try:
+            if args.input:
+                result = service.publish_path(args.input)
+            elif args.id:
+                result = service.publish_id(args.id)
+            else:
+                raise ValueError("Provide --input or --id.")
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(_format_publish_result(result))
+        return 0 if result.status == "posted" else 1
+
+    results = service.publish_queue(platform=args.platform)
+    if not results:
+        print(f"No queued items found for {args.platform}.")
+        return 0
+    for result in results:
+        print(_format_publish_result(result))
+    return 0 if all(result.status == "posted" for result in results) else 1
+
+
+def _format_publish_result(result) -> str:
+    if result.status == "posted":
+        target = result.external_url or result.external_id or "posted"
+        return f"{result.item_id} | {result.platform} | posted | {target}"
+    return f"{result.item_id} | {result.platform} | failed | {result.error}"
 
 
 def _run_workflow_command(args: argparse.Namespace) -> int:

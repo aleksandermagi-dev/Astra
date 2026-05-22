@@ -18,7 +18,7 @@ VALID_WORKFLOW_PLATFORMS = {
     "youtube_shorts",
 }
 VALID_IDEA_PLATFORMS = VALID_WORKFLOW_PLATFORMS | {"all"}
-VALID_STATUSES = {"draft", "approved", "queued", "posted"}
+VALID_STATUSES = {"draft", "approved", "queued", "publishing", "posted", "failed"}
 VALID_WORKFLOW_STAGES = {"master", "platform_variant"}
 VALID_POST_TIME_SLOTS = {"morning", "afternoon", "evening"}
 VALID_SAFETY_DECISIONS = {"PASS", "REWRITE", "DISCARD"}
@@ -515,6 +515,46 @@ class MarketLogEntry:
             objections=str(payload.get("objections", "")),
             buyer_language=str(payload.get("buyer_language", "")),
             next_action=str(payload.get("next_action", "")),
+        )
+
+    def to_mapping(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class PublishResult:
+    platform: str
+    item_id: str
+    status: str
+    external_id: str = ""
+    external_url: str = ""
+    published_at: str = field(default_factory=_utc_now_iso)
+    account_label: str = ""
+    error: str = ""
+
+    def __post_init__(self) -> None:
+        self.platform = _clean_string(self.platform, "platform").lower()
+        self.item_id = _clean_string(self.item_id, "item_id")
+        self.status = _clean_string(self.status, "status").lower()
+        if self.status not in {"posted", "failed"}:
+            raise ValueError("publish result status must be posted or failed.")
+        self.external_id = str(self.external_id or "").strip()
+        self.external_url = str(self.external_url or "").strip()
+        self.published_at = _clean_string(self.published_at, "published_at")
+        self.account_label = str(self.account_label or "").strip()
+        self.error = str(self.error or "").strip()
+
+    @classmethod
+    def from_mapping(cls, payload: dict[str, Any]) -> "PublishResult":
+        return cls(
+            platform=str(payload.get("platform", "")),
+            item_id=str(payload.get("item_id", "")),
+            status=str(payload.get("status", "")),
+            external_id=str(payload.get("external_id", "")),
+            external_url=str(payload.get("external_url", "")),
+            published_at=str(payload.get("published_at", _utc_now_iso())),
+            account_label=str(payload.get("account_label", "")),
+            error=str(payload.get("error", "")),
         )
 
     def to_mapping(self) -> dict[str, Any]:

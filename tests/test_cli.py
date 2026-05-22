@@ -6,7 +6,7 @@ from pathlib import Path
 
 from astra.cli import run_cli
 from astra.config import AstraConfig
-from astra.models import CampaignDay, CampaignPlan, ContentPost, IdeaItem, ReplyDraft, WorkflowContentItem
+from astra.models import CampaignDay, CampaignPlan, ContentPost, IdeaItem, PublishResult, ReplyDraft, WorkflowContentItem
 from astra.production import ProductionPipelineError, ProductionResult
 from astra.outputs import ensure_output_dirs, save_content_item
 from astra.tendril.settings import TendrilSettings
@@ -428,6 +428,29 @@ def test_cli_feedback_and_experiments_from_csv(monkeypatch, tmp_path) -> None:
     assert list((tmp_path / "outputs" / "experiments").glob("*.md"))
 
 
+def test_cli_accounts_publish_and_publish_queue(monkeypatch) -> None:
+    monkeypatch.setattr("astra.cli.PublishingService", FakePublishingService)
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    exit_code = run_cli(["accounts", "status"], stdout=stdout, stderr=stderr)
+
+    assert exit_code == 0
+    assert "bluesky: configured" in stdout.getvalue()
+
+    stdout = io.StringIO()
+    exit_code = run_cli(["publish", "--id", "pub12345"], stdout=stdout, stderr=stderr)
+
+    assert exit_code == 0
+    assert "posted" in stdout.getvalue()
+
+    stdout = io.StringIO()
+    exit_code = run_cli(["publish-queue", "--platform", "bluesky"], stdout=stdout, stderr=stderr)
+
+    assert exit_code == 0
+    assert "pub12345 | bluesky | posted" in stdout.getvalue()
+
+
 def test_cli_does_not_expose_external_posting_commands() -> None:
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -540,6 +563,23 @@ class FakePipeline:
                 "video": ready_dir / "video.mp4",
             },
         )
+
+
+class FakePublishingService:
+    def __init__(self) -> None:
+        pass
+
+    def accounts_status(self):
+        return {"bluesky": "configured"}
+
+    def publish_path(self, path):
+        return PublishResult(platform="bluesky", item_id="pub12345", status="posted", external_url="https://bsky.app/profile/x/post/y")
+
+    def publish_id(self, item_id):
+        return PublishResult(platform="bluesky", item_id=item_id, status="posted", external_url="https://bsky.app/profile/x/post/y")
+
+    def publish_queue(self, platform="bluesky"):
+        return [PublishResult(platform=platform, item_id="pub12345", status="posted", external_url="https://bsky.app/profile/x/post/y")]
 
 
 class FailingPipeline:

@@ -122,6 +122,27 @@ def review_queue_args() -> list[str]:
     return ["review-queue"]
 
 
+def accounts_status_args() -> list[str]:
+    return ["accounts", "status"]
+
+
+def publish_queue_args(platform: str = "bluesky") -> list[str]:
+    return ["publish-queue", "--platform", platform]
+
+
+def publish_item_args(value: str) -> list[str]:
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError("Type an item id or queued item path first.")
+    if any(separator in cleaned for separator in ("\\", "/", ":")):
+        return ["publish", "--input", cleaned]
+    return ["publish", "--id", cleaned]
+
+
+def publish_log_args() -> list[str]:
+    return ["publish-log"]
+
+
 def default_open_path(path: Path) -> None:
     startfile = getattr(__import__("os"), "startfile", None)
     if startfile is not None:
@@ -211,12 +232,13 @@ class AstraGuiApp:
 
         quick = ttk.Frame(self.root, padding=(14, 0, 14, 6))
         quick.grid(row=3, column=0, sticky="ew")
-        for index in range(10):
+        for index in range(11):
             quick.columnconfigure(index, weight=1)
         buttons = [
-            ("Format Reddit", lambda: self.run_command(format_latest_args("reddit"))),
-            ("Format HN", lambda: self.run_command(format_latest_args("hacker_news"))),
-            ("Reply Draft", self.run_reply),
+            ("Accounts", lambda: self.run_command(accounts_status_args())),
+            ("Publish Bluesky", lambda: self.run_command(publish_queue_args("bluesky"))),
+            ("Publish Log", lambda: self.run_command(publish_log_args())),
+            ("Publish Item", self.run_publish_item),
             ("Review Drafts", lambda: self.run_command(review_drafts_args())),
             ("Review Queue", lambda: self.run_command(review_queue_args())),
             ("Market Log", lambda: self.run_command(market_log_args(save=True))),
@@ -292,6 +314,15 @@ class AstraGuiApp:
                 user_signal=request,
             )
         )
+
+    def run_publish_item(self) -> None:
+        request = self.request_text.get("1.0", "end").strip()
+        try:
+            args = publish_item_args(request)
+        except ValueError as exc:
+            self.show_message(str(exc), ok=False)
+            return
+        self.run_command(args)
 
     def run_command(self, args: Sequence[str]) -> None:
         self.status_var.set("Running...")

@@ -136,6 +136,30 @@ class TikTokPostingConfig:
 
 
 @dataclass(slots=True)
+class BlueskyPostingConfig:
+    handle: str = ""
+    app_password: str | None = None
+    service_url: str = "https://bsky.social"
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.handle and self.app_password)
+
+    @property
+    def account_label(self) -> str:
+        return self.handle or "not configured"
+
+    @classmethod
+    def from_mapping(cls, payload: Any) -> "BlueskyPostingConfig":
+        data = payload if isinstance(payload, dict) else {}
+        return cls(
+            handle=os.getenv("ASTRA_BLUESKY_HANDLE") or str(data.get("handle", "")),
+            app_password=os.getenv("ASTRA_BLUESKY_APP_PASSWORD") or data.get("app_password"),
+            service_url=(os.getenv("ASTRA_BLUESKY_SERVICE_URL") or str(data.get("service_url", "https://bsky.social"))).rstrip("/"),
+        )
+
+
+@dataclass(slots=True)
 class ElevenLabsConfig:
     api_key: str | None = None
     voice_id: str = ""
@@ -210,6 +234,7 @@ class AstraConfig:
     style: list[str] = field(default_factory=lambda: list(DEFAULT_STYLE))
     youtube_upload: YouTubeUploadConfig = field(default_factory=YouTubeUploadConfig)
     tiktok_posting: TikTokPostingConfig = field(default_factory=TikTokPostingConfig)
+    bluesky_posting: BlueskyPostingConfig = field(default_factory=BlueskyPostingConfig)
     elevenlabs: ElevenLabsConfig = field(default_factory=ElevenLabsConfig)
     video: VideoConfig = field(default_factory=VideoConfig)
     api_key: str | None = None
@@ -243,6 +268,7 @@ class AstraConfig:
             style=list(data.get("style", DEFAULT_STYLE)),
             youtube_upload=YouTubeUploadConfig.from_mapping(data.get("youtube_upload")),
             tiktok_posting=TikTokPostingConfig.from_mapping(data.get("tiktok_posting")),
+            bluesky_posting=BlueskyPostingConfig.from_mapping(data.get("bluesky_posting")),
             elevenlabs=ElevenLabsConfig.from_mapping(data.get("elevenlabs")),
             video=VideoConfig.from_mapping(data.get("video")),
             api_key=api_key,
@@ -309,6 +335,7 @@ class AstraConfig:
             style=list(self.style),
             youtube_upload=self.youtube_upload,
             tiktok_posting=self.tiktok_posting,
+            bluesky_posting=self.bluesky_posting,
             elevenlabs=self.elevenlabs,
             video=self.video,
             api_key=self.api_key,

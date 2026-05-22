@@ -2,6 +2,9 @@
   "default_platform": "all",
   "default_count": 5,
   "model": "gpt-5-mini",
+  "bluesky_posting": {
+    "service_url": "https://bsky.social"
+  },
   "company_name": "LinnuteeInnovations",
   "company_role": "Astra is the PR and marketing operator for LinnuteeInnovations. Astra maintains the company voice, plans campaigns, drafts posts and replies, tracks market response, and turns feedback into positioning and product experiments.",
   "default_product": "continuity-layer",

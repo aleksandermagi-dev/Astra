@@ -115,6 +115,10 @@ astra approve --input "C:\path\to\draft.json"
 astra queue --input "C:\path\to\approved.json" --slot morning
 astra review-drafts
 astra review-queue
+astra accounts status
+astra publish --input "C:\path\to\queued_bluesky.json"
+astra publish-queue --platform bluesky
+astra publish-log
 astra mark-posted --input "C:\path\to\queued.json"
 astra log-post --input "C:\path\to\queued.json" --post-id-or-url "https://example.com/post/123"
 astra analyze --input performance.json
@@ -137,6 +141,38 @@ Astra saves workflow content into `outputs/`:
 
 Workflow items are JSON so they are easy to review manually and automate later.
 
+## Approval-Gated Publishing
+
+Astra can publish approved/queued Bluesky posts after explicit founder approval.
+
+Current real connector:
+
+- `bluesky` / `x_bluesky`
+
+Configure Bluesky with an app password:
+
+```powershell
+setx ASTRA_BLUESKY_HANDLE "your-handle.bsky.social"
+setx ASTRA_BLUESKY_APP_PASSWORD "your-app-password"
+```
+
+Optional:
+
+```powershell
+setx ASTRA_BLUESKY_SERVICE_URL "https://bsky.social"
+```
+
+Publishing flow:
+
+```powershell
+astra posts draft --product "Continuity Layer" --channel x_bluesky --count 3 --goal "launch"
+astra approve --input "C:\path\to\draft.json"
+astra queue --input "C:\path\to\approved.json" --slot afternoon
+astra publish-queue --platform bluesky
+```
+
+Every publish attempt writes a local audit record to `outputs/logs/*_publish.jsonl`. Successful posts move to `outputs/posted/`. Failed posts stay queued for retry or manual handling.
+
 ## Product Profiles
 
 Astra can work at the company level or against a product profile. Continuity Layer is the default product profile in `astra.config.json`, and future LinnuteeInnovations products can be added under `products`.
@@ -151,6 +187,9 @@ Optional environment variables:
 
 - `ASTRA_MODEL`
 - `ASTRA_CONFIG`
+- `ASTRA_BLUESKY_HANDLE`
+- `ASTRA_BLUESKY_APP_PASSWORD`
+- `ASTRA_BLUESKY_SERVICE_URL`
 
 `ASTRA_CONFIG` can point to a JSON file with company defaults, active product facts, channels, audience, and tone.
 

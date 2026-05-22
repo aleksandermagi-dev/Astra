@@ -7,6 +7,10 @@ from astra.gui import (
     format_latest_args,
     ideas_args,
     market_log_args,
+    accounts_status_args,
+    publish_item_args,
+    publish_log_args,
+    publish_queue_args,
     posts_args,
     product_names,
     replies_args,
@@ -48,6 +52,11 @@ def test_gui_quick_action_args() -> None:
     assert tendril_list_args() == ["tendril", "list"]
     assert review_drafts_args() == ["review-drafts"]
     assert review_queue_args() == ["review-queue"]
+    assert accounts_status_args() == ["accounts", "status"]
+    assert publish_queue_args("bluesky") == ["publish-queue", "--platform", "bluesky"]
+    assert publish_log_args() == ["publish-log"]
+    assert publish_item_args("abc12345") == ["publish", "--id", "abc12345"]
+    assert publish_item_args(r"C:\queued\item.json") == ["publish", "--input", r"C:\queued\item.json"]
 
 
 def test_gui_pr_action_args() -> None:

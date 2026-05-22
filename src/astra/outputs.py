@@ -8,7 +8,7 @@ import re
 import sys
 from typing import Iterable
 
-from .models import AnalyticsLogEntry, VALID_POST_TIME_SLOTS, WorkflowContentItem
+from .models import AnalyticsLogEntry, PublishResult, VALID_POST_TIME_SLOTS, WorkflowContentItem
 
 
 WORKFLOW_DIRECTORIES = (
@@ -266,6 +266,24 @@ def append_analytics_log(entry: AnalyticsLogEntry, base_dir: Path | None = None,
     with target.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry.to_mapping()) + "\n")
     return target
+
+
+def append_publish_log(result: PublishResult, base_dir: Path | None = None, *, now: datetime | None = None) -> Path:
+    directories = ensure_output_dirs(base_dir)
+    target = directories["logs"] / f"{(now or datetime.now()).strftime('%Y-%m-%d')}_publish.jsonl"
+    with target.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(result.to_mapping()) + "\n")
+    return target
+
+
+def load_publish_log(base_dir: Path | None = None) -> list[PublishResult]:
+    directories = ensure_output_dirs(base_dir)
+    results: list[PublishResult] = []
+    for path in sorted(directories["logs"].glob("*_publish.jsonl")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                results.append(PublishResult.from_mapping(json.loads(line)))
+    return results
 
 
 def find_content_item_path(item_id: str, base_dir: Path | None = None) -> Path:
