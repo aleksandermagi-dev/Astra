@@ -4,6 +4,7 @@ from astra.gui import (
     batch_args,
     campaign_args,
     conversational_args,
+    continuity_launch_pack_commands,
     format_latest_args,
     format_item_inspector,
     ideas_args,
@@ -24,6 +25,7 @@ from astra.gui import (
     review_drafts_args,
     review_queue_args,
     run_cli_capture,
+    run_launch_pack_commands,
     settings_status_lines,
     tendril_list_args,
 )
@@ -106,6 +108,106 @@ def test_gui_pr_action_args() -> None:
         "--user-signal",
         "Is this just Notion?",
     ]
+
+
+def test_continuity_launch_pack_commands_are_exact_and_ordered() -> None:
+    commands = continuity_launch_pack_commands()
+
+    assert commands == [
+        [
+            "campaign",
+            "create",
+            "--goal",
+            "Launch paid early access for Continuity Layer",
+            "--days",
+            "7",
+            "--product",
+            "Continuity Layer",
+        ],
+        [
+            "posts",
+            "draft",
+            "--channel",
+            "x_bluesky",
+            "--count",
+            "3",
+            "--product",
+            "Continuity Layer",
+            "--goal",
+            "Launch paid early access for Continuity Layer",
+        ],
+        [
+            "posts",
+            "draft",
+            "--channel",
+            "reddit",
+            "--count",
+            "2",
+            "--product",
+            "Continuity Layer",
+            "--goal",
+            "Launch paid early access for Continuity Layer",
+        ],
+        [
+            "posts",
+            "draft",
+            "--channel",
+            "hacker_news",
+            "--count",
+            "1",
+            "--product",
+            "Continuity Layer",
+            "--goal",
+            "Show HN / technical launch for Continuity Layer",
+        ],
+        [
+            "posts",
+            "draft",
+            "--channel",
+            "indie_hackers",
+            "--count",
+            "1",
+            "--product",
+            "Continuity Layer",
+            "--goal",
+            "Founder-built early access launch",
+        ],
+        ["replies", "draft", "--scenario", "skeptical_user", "--product", "Continuity Layer"],
+        ["replies", "draft", "--scenario", "why_not_readme_notion", "--product", "Continuity Layer"],
+        ["market-log-template", "--format", "md", "--save"],
+    ]
+
+
+def test_run_launch_pack_commands_summarizes_success() -> None:
+    calls = []
+
+    def fake_runner(argv, *, stdout, stderr):
+        calls.append(argv)
+        stdout.write(f"saved {' '.join(argv[:2])}")
+        return 0
+
+    result = run_launch_pack_commands(cli_runner=fake_runner)
+
+    assert result.ok is True
+    assert calls == continuity_launch_pack_commands()
+    assert "Launch pack created as drafts" in result.display_text
+    assert "OK: campaign create" in result.display_text
+
+
+def test_run_launch_pack_commands_summarizes_partial_failure() -> None:
+    def fake_runner(argv, *, stdout, stderr):
+        if argv[:2] == ["posts", "draft"] and "reddit" in argv:
+            stderr.write("missing OPENAI_API_KEY")
+            return 1
+        stdout.write("ok")
+        return 0
+
+    result = run_launch_pack_commands(cli_runner=fake_runner)
+
+    assert result.ok is False
+    assert "FAILED: posts draft" in result.display_text
+    assert "missing OPENAI_API_KEY" in result.display_text
+    assert "No approval, queue, or publish action was run" in result.display_text
 
 
 def test_gui_batch_args_requires_topic() -> None:

@@ -45,6 +45,10 @@ class DashboardItem:
     created_at: str
 
 
+CONTINUITY_LAUNCH_PRODUCT = "Continuity Layer"
+CONTINUITY_LAUNCH_GOAL = "Launch paid early access for Continuity Layer"
+
+
 def run_cli_capture(argv: Sequence[str], *, cli_runner: CliRunner = run_cli) -> GuiCommandResult:
     stdout = io.StringIO()
     stderr = io.StringIO()
@@ -120,6 +124,45 @@ def market_log_args(*, save: bool = False) -> list[str]:
     if save:
         args.append("--save")
     return args
+
+
+def continuity_launch_pack_commands() -> list[list[str]]:
+    return [
+        campaign_args(product=CONTINUITY_LAUNCH_PRODUCT, goal=CONTINUITY_LAUNCH_GOAL),
+        posts_args(product=CONTINUITY_LAUNCH_PRODUCT, channel="x_bluesky", count=3, goal=CONTINUITY_LAUNCH_GOAL),
+        posts_args(product=CONTINUITY_LAUNCH_PRODUCT, channel="reddit", count=2, goal=CONTINUITY_LAUNCH_GOAL),
+        posts_args(
+            product=CONTINUITY_LAUNCH_PRODUCT,
+            channel="hacker_news",
+            count=1,
+            goal="Show HN / technical launch for Continuity Layer",
+        ),
+        posts_args(
+            product=CONTINUITY_LAUNCH_PRODUCT,
+            channel="indie_hackers",
+            count=1,
+            goal="Founder-built early access launch",
+        ),
+        replies_args(product=CONTINUITY_LAUNCH_PRODUCT, scenario="skeptical_user", user_signal=""),
+        replies_args(product=CONTINUITY_LAUNCH_PRODUCT, scenario="why_not_readme_notion", user_signal=""),
+        market_log_args(save=True),
+    ]
+
+
+def run_launch_pack_commands(*, cli_runner: CliRunner = run_cli) -> GuiCommandResult:
+    sections = ["Continuity Layer Launch Pack", ""]
+    failures = 0
+    for index, args in enumerate(continuity_launch_pack_commands(), start=1):
+        result = run_cli_capture(args, cli_runner=cli_runner)
+        status = "OK" if result.ok else "FAILED"
+        if not result.ok:
+            failures += 1
+        sections.extend([f"{index}. {status}: {' '.join(args)}", result.display_text, ""])
+    if failures:
+        sections.append(f"Finished with {failures} failed step(s). No approval, queue, or publish action was run.")
+        return GuiCommandResult(exit_code=1, output="\n".join(sections).strip(), error="")
+    sections.append("Launch pack created as drafts. Review, approve, queue, and publish manually.")
+    return GuiCommandResult(exit_code=0, output="\n".join(sections).strip(), error="")
 
 
 def tendril_list_args() -> list[str]:
@@ -405,11 +448,16 @@ class AstraGuiApp:
         ttk.Button(controls, text="Run Request", command=self.run_request).grid(row=2, column=3, sticky="w", padx=(0, 8))
         ttk.Button(controls, text="Campaign", command=self.run_campaign).grid(row=2, column=4, sticky="w", padx=(0, 8))
         ttk.Button(controls, text="Draft Posts", command=self.run_posts).grid(row=2, column=5, sticky="e")
+        ttk.Button(controls, text="Continuity Launch Pack", command=self.run_continuity_launch_pack).grid(
+            row=3,
+            column=0,
+            sticky="w",
+            pady=(10, 0),
+        )
 
-        output_frame = ttk.Frame(self.root, padding=(14, 0, 14, 6))
         output_frame = ttk.Frame(controls, padding=(0, 12, 0, 0))
-        output_frame.grid(row=3, column=0, columnspan=6, sticky="nsew")
-        controls.rowconfigure(3, weight=1)
+        output_frame.grid(row=4, column=0, columnspan=6, sticky="nsew")
+        controls.rowconfigure(4, weight=1)
         output_frame.columnconfigure(0, weight=1)
         output_frame.rowconfigure(0, weight=1)
         self.output_text = tk.Text(output_frame, wrap="word", font=("Consolas", 10))
@@ -561,6 +609,13 @@ class AstraGuiApp:
             self.show_message(str(exc), ok=False)
             return
         self.run_command(args)
+
+    def run_continuity_launch_pack(self) -> None:
+        self.status_var.set("Creating launch pack...")
+        self.root.update_idletasks()
+        result = run_launch_pack_commands(cli_runner=self.cli_runner)
+        self.show_message(result.display_text, ok=result.ok)
+        self.refresh_dashboard()
 
     def run_command(self, args: Sequence[str]) -> None:
         self.status_var.set("Running...")
