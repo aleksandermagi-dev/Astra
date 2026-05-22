@@ -206,3 +206,7 @@ To build the older console launcher:
 ```powershell
 build_console_exe.bat
 ```
+
+## Coding Continuity
+
+Use Continuity Layer as coding-session memory for Astra, not as an Astra runtime feature. The workflow is documented in [docs/CODING_CONTINUITY.md](docs/CODING_CONTINUITY.md).

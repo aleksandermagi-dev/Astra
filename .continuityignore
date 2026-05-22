@@ -1,0 +1,15 @@
+# Generated artifacts and local runtime data
+outputs/
+build/
+dist/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Local environments and packaging metadata
+.venv/
+venv/
+*.egg-info/
+
+# Local secrets
+.env
