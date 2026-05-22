@@ -57,15 +57,16 @@ def test_bluesky_publisher_builds_expected_api_requests() -> None:
     assert calls[1][2]["Authorization"] == "Bearer token"
 
 
-def test_bluesky_publisher_rejects_unapproved_items_and_long_text() -> None:
+def test_bluesky_publisher_rejects_non_queued_items_and_long_text() -> None:
     publisher = BlueskyPublisher(BlueskyPostingConfig(handle="x", app_password="y"), transport=lambda *_, **__: {})
 
-    try:
-        publisher.publish(_item(status="draft"))
-    except PublisherError as exc:
-        assert "Only approved or queued" in str(exc)
-    else:
-        raise AssertionError("Draft item should not publish.")
+    for status in ("draft", "approved"):
+        try:
+            publisher.publish(_item(status=status))
+        except PublisherError as exc:
+            assert "Only queued" in str(exc)
+        else:
+            raise AssertionError(f"{status} item should not publish.")
 
     try:
         publisher.publish(_item(hook="x" * 301))

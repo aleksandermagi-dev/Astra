@@ -73,8 +73,8 @@ class BlueskyPublisher:
         return "configured" if self.config.configured else "missing_credentials"
 
     def publish(self, item: WorkflowContentItem) -> PublishResult:
-        if item.status not in {"approved", "queued"}:
-            raise PublisherError("Only approved or queued items can be published.")
+        if item.status != "queued":
+            raise PublisherError("Only queued items can be published.")
         if item.platform not in {"x_bluesky", "bluesky"}:
             raise PublisherError("Bluesky publisher only supports x_bluesky/bluesky items.")
         if not self.config.configured:

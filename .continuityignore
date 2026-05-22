@@ -10,6 +10,8 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+src/*.egg-info/
+src/astra_social_media.egg-info/
 
 # Local secrets
 .env

@@ -260,7 +260,7 @@ class WorkflowContentItem:
         self.suggested_post_time = _clean_string(self.suggested_post_time, "suggested_post_time")
         self.status = _clean_string(self.status, "status").lower()
         if self.status not in VALID_STATUSES:
-            raise ValueError("status must be draft, approved, queued, or posted.")
+            raise ValueError("status must be draft, approved, queued, publishing, posted, or failed.")
         self.created_at = _clean_string(self.created_at, "created_at")
         self.workflow_stage = _clean_string(self.workflow_stage, "workflow_stage").lower()
         if self.workflow_stage not in VALID_WORKFLOW_STAGES:

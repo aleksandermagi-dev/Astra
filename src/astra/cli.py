@@ -170,11 +170,11 @@ def build_parser() -> argparse.ArgumentParser:
     accounts_subparsers = accounts_parser.add_subparsers(dest="accounts_command", required=True)
     accounts_subparsers.add_parser("status", help="Show account connector status")
 
-    publish_parser = subparsers.add_parser("publish", help="Publish one approved or queued item")
+    publish_parser = subparsers.add_parser("publish", help="Publish one queued item")
     publish_parser.add_argument("--input")
     publish_parser.add_argument("--id")
 
-    publish_queue_parser = subparsers.add_parser("publish-queue", help="Publish queued approved items")
+    publish_queue_parser = subparsers.add_parser("publish-queue", help="Publish queued items")
     publish_queue_parser.add_argument("--platform", choices=["bluesky"], default="bluesky")
 
     subparsers.add_parser("publish-log", help="Show publish audit log")
