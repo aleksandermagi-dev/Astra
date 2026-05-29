@@ -190,3 +190,27 @@ def test_campaign_plan_and_reply_draft_normalize_ollama_text_shapes() -> None:
     assert plan.notes == "approval: draft-first"
     assert reply.reply == "ack: Fair question.; answer: Docs help, but agents need current packets."
     assert reply.tracking_note == "theme: README objection"
+
+
+def test_campaign_day_normalizes_channel_aliases() -> None:
+    aliases = {
+        "bluesky": "x_bluesky",
+        "x": "x_bluesky",
+        "x/bluesky": "x_bluesky",
+        "hn": "hacker_news",
+        "Hacker News": "hacker_news",
+        "dev.to": "devto",
+        "email": "email_update",
+    }
+
+    for alias, expected in aliases.items():
+        day = CampaignDay(
+            day=1,
+            channel=alias,
+            angle="Ask for feedback.",
+            cta="Open GitHub.",
+            reply_focus="Builder pain.",
+            objection_to_watch="Why now?",
+            tracking_goal="Replies.",
+        )
+        assert day.channel == expected

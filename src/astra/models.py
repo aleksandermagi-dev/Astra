@@ -24,6 +24,25 @@ VALID_POST_TIME_SLOTS = {"morning", "afternoon", "evening"}
 VALID_SAFETY_DECISIONS = {"PASS", "REWRITE", "DISCARD"}
 VALID_SAFETY_DIMENSIONS = {"tone", "topic", "quality", "brand", "posting"}
 VALID_REPLY_SCENARIOS = {"skeptical_user", "interested_builder", "setup_lead", "why_not_readme_notion"}
+CHANNEL_ALIASES = {
+    "bluesky": "x_bluesky",
+    "bsky": "x_bluesky",
+    "x": "x_bluesky",
+    "x bluesky": "x_bluesky",
+    "x/bluesky": "x_bluesky",
+    "x_bluesky": "x_bluesky",
+    "hn": "hacker_news",
+    "hacker news": "hacker_news",
+    "hacker_news": "hacker_news",
+    "dev to": "devto",
+    "dev.to": "devto",
+    "devto": "devto",
+    "email": "email_update",
+    "email update": "email_update",
+    "email_update": "email_update",
+    "indie hackers": "indie_hackers",
+    "indie_hackers": "indie_hackers",
+}
 
 # Backward-compatible alias used by the older CLI/tests.
 VALID_PLATFORMS = set(VALID_IDEA_PLATFORMS)
@@ -36,6 +55,12 @@ def _clean_string(value: Any, field_name: str) -> str:
     if not cleaned:
         raise ValueError(f"{field_name} cannot be empty.")
     return cleaned
+
+
+def normalize_workflow_channel(value: Any, field_name: str = "channel") -> str:
+    cleaned = normalize_model_text(value, field_name).lower().replace("-", " ").strip()
+    normalized = CHANNEL_ALIASES.get(cleaned, cleaned.replace(" ", "_"))
+    return normalized
 
 
 def normalize_model_text(value: Any, field_name: str) -> str:
@@ -421,7 +446,7 @@ class CampaignDay:
     def __post_init__(self) -> None:
         if self.day < 1:
             raise ValueError("day must be >= 1.")
-        self.channel = _clean_string(self.channel, "channel").lower()
+        self.channel = normalize_workflow_channel(self.channel, "channel")
         if self.channel not in VALID_WORKFLOW_PLATFORMS:
             raise ValueError("channel must be a supported PR channel.")
         self.angle = normalize_model_text(self.angle, "angle")

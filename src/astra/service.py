@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import socket
 from typing import Any, Protocol
 from urllib import error as urlerror
 from urllib import request as urlrequest
@@ -20,6 +21,9 @@ from .prompts import (
     build_system_prompt,
 )
 from .safety_layer import AstraSafetyLayer
+
+OLLAMA_HEALTH_TIMEOUT_SECONDS = 5
+OLLAMA_GENERATE_TIMEOUT_SECONDS = 300
 
 
 class ResponseTransport(Protocol):
@@ -50,6 +54,7 @@ def openai_transport(*, system_prompt: str, user_prompt: str, model: str) -> str
 
 def ollama_transport_factory(*, base_url: str, ollama_model: str) -> ResponseTransport:
     def transport(*, system_prompt: str, user_prompt: str, model: str) -> str:
+        check_ollama_health(base_url=base_url, ollama_model=ollama_model)
         prompt = "\n\n".join(
             [
                 "System:",
@@ -72,26 +77,71 @@ def ollama_transport_factory(*, base_url: str, ollama_model: str) -> ResponseTra
             method="POST",
         )
         try:
-            with urlrequest.urlopen(request, timeout=120) as response:
+            with urlrequest.urlopen(request, timeout=OLLAMA_GENERATE_TIMEOUT_SECONDS) as response:
                 data = json.loads(response.read().decode("utf-8"))
         except urlerror.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace").strip()
             detail = f" Ollama said: {body}" if body else ""
             raise RuntimeError(
                 f"Ollama returned HTTP {exc.code} at {base_url}.{detail} "
-                f"Open Ollama or run `ollama serve`, and make sure `{ollama_model}` is installed."
+                f"Ollama is running, but the generation request failed."
             ) from exc
-        except (OSError, urlerror.URLError, json.JSONDecodeError) as exc:
+        except (TimeoutError, socket.timeout) as exc:
+            raise RuntimeError(
+                f"Ollama is running at {base_url}, but this request took too long. "
+                f"The local model may still be working; retry, or use a smaller/faster model."
+            ) from exc
+        except urlerror.URLError as exc:
+            if isinstance(exc.reason, (TimeoutError, socket.timeout)):
+                raise RuntimeError(
+                    f"Ollama is running at {base_url}, but this request took too long. "
+                    f"The local model may still be working; retry, or use a smaller/faster model."
+                ) from exc
             raise RuntimeError(
                 f"Ollama is not reachable at {base_url}. Open Ollama or run `ollama serve`, "
-                f"and make sure `{ollama_model}` is installed."
+                f"then retry Astra."
             ) from exc
+        except OSError as exc:
+            raise RuntimeError(
+                f"Ollama is not reachable at {base_url}. Open Ollama or run `ollama serve`, "
+                f"then retry Astra."
+            ) from exc
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"Ollama returned an unreadable response at {base_url}.") from exc
         text = str(data.get("response") or "").strip()
         if not text:
             raise RuntimeError("Ollama returned an empty response.")
         return text
 
     return transport
+
+
+def check_ollama_health(*, base_url: str, ollama_model: str) -> str:
+    request = urlrequest.Request(f"{base_url.rstrip('/')}/api/tags", method="GET")
+    try:
+        with urlrequest.urlopen(request, timeout=OLLAMA_HEALTH_TIMEOUT_SECONDS) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urlerror.HTTPError as exc:
+        raise RuntimeError(f"Ollama health check failed with HTTP {exc.code} at {base_url}.") from exc
+    except (TimeoutError, socket.timeout) as exc:
+        raise RuntimeError(f"Ollama is running but slow to answer at {base_url}. Retry in a moment.") from exc
+    except urlerror.URLError as exc:
+        if isinstance(exc.reason, (TimeoutError, socket.timeout)):
+            raise RuntimeError(f"Ollama is running but slow to answer at {base_url}. Retry in a moment.") from exc
+        raise RuntimeError(f"Ollama is not reachable at {base_url}. Open Ollama or run `ollama serve`, then retry Astra.") from exc
+    except OSError as exc:
+        raise RuntimeError(f"Ollama is not reachable at {base_url}. Open Ollama or run `ollama serve`, then retry Astra.") from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Ollama health check returned unreadable data at {base_url}.") from exc
+
+    models = data.get("models", [])
+    model_names = {str(item.get("name") or item.get("model") or "") for item in models if isinstance(item, dict)}
+    if ollama_model not in model_names:
+        raise RuntimeError(
+            f"Ollama is running at {base_url}, but model `{ollama_model}` is missing. "
+            f"Run `ollama pull {ollama_model}`, then retry Astra."
+        )
+    return f"Ollama is running at {base_url} with model `{ollama_model}`."
 
 
 def default_transport_for_config(config: AstraConfig) -> ResponseTransport:

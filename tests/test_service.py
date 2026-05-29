@@ -1,7 +1,8 @@
 from astra.config import AstraConfig
 from astra.models import WorkflowContentItem
-from astra.service import AstraGenerator, ollama_transport_factory
+from astra.service import AstraGenerator, check_ollama_health, ollama_transport_factory
 import json
+from urllib import error as urlerror
 
 
 def test_generator_parses_ideas_response() -> None:
@@ -17,7 +18,19 @@ def test_generator_parses_ideas_response() -> None:
 def test_ollama_transport_sends_json_request(monkeypatch) -> None:
     captured = {}
 
+    def fake_urlopen(request, timeout):
+        if request.full_url.endswith("/api/tags"):
+            captured["health_timeout"] = timeout
+            return FakeResponse({"models": [{"name": "llama3.1:8b"}]})
+        captured["url"] = request.full_url
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return FakeResponse()
+
     class FakeResponse:
+        def __init__(self, payload=None):
+            self.payload = payload or {"response": "{\"ideas\":[]}"}
+
         def __enter__(self):
             return self
 
@@ -25,13 +38,7 @@ def test_ollama_transport_sends_json_request(monkeypatch) -> None:
             return False
 
         def read(self):
-            return json.dumps({"response": "{\"ideas\":[]}"}).encode("utf-8")
-
-    def fake_urlopen(request, timeout):
-        captured["url"] = request.full_url
-        captured["payload"] = json.loads(request.data.decode("utf-8"))
-        captured["timeout"] = timeout
-        return FakeResponse()
+            return json.dumps(self.payload).encode("utf-8")
 
     monkeypatch.setattr("astra.service.urlrequest.urlopen", fake_urlopen)
     transport = ollama_transport_factory(base_url="http://127.0.0.1:11434", ollama_model="llama3.1:8b")
@@ -44,6 +51,8 @@ def test_ollama_transport_sends_json_request(monkeypatch) -> None:
     assert captured["payload"]["stream"] is False
     assert captured["payload"]["format"] == "json"
     assert "System:" in captured["payload"]["prompt"]
+    assert captured["health_timeout"] == 5
+    assert captured["timeout"] == 300
 
 
 def test_ollama_transport_unavailable_has_clear_error(monkeypatch) -> None:
@@ -60,6 +69,93 @@ def test_ollama_transport_unavailable_has_clear_error(monkeypatch) -> None:
         assert "ollama serve" in str(exc)
     else:
         raise AssertionError("Expected Ollama transport to fail clearly.")
+
+
+def test_ollama_health_reports_model_present(monkeypatch) -> None:
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps({"models": [{"name": "llama3.1:8b"}]}).encode("utf-8")
+
+    monkeypatch.setattr("astra.service.urlrequest.urlopen", lambda request, timeout: FakeResponse())
+
+    message = check_ollama_health(base_url="http://127.0.0.1:11434", ollama_model="llama3.1:8b")
+
+    assert "Ollama is running" in message
+
+
+def test_ollama_health_reports_missing_model(monkeypatch) -> None:
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps({"models": [{"name": "other:model"}]}).encode("utf-8")
+
+    monkeypatch.setattr("astra.service.urlrequest.urlopen", lambda request, timeout: FakeResponse())
+
+    try:
+        check_ollama_health(base_url="http://127.0.0.1:11434", ollama_model="llama3.1:8b")
+    except RuntimeError as exc:
+        assert "model `llama3.1:8b` is missing" in str(exc)
+        assert "ollama pull llama3.1:8b" in str(exc)
+    else:
+        raise AssertionError("Expected missing model error.")
+
+
+def test_ollama_transport_timeout_says_running_but_slow(monkeypatch) -> None:
+    def fake_urlopen(request, timeout):
+        if request.full_url.endswith("/api/tags"):
+            return FakeResponse({"models": [{"name": "llama3.1:8b"}]})
+        raise TimeoutError("slow")
+
+    class FakeResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps(self.payload).encode("utf-8")
+
+    monkeypatch.setattr("astra.service.urlrequest.urlopen", fake_urlopen)
+    transport = ollama_transport_factory(base_url="http://127.0.0.1:11434", ollama_model="llama3.1:8b")
+
+    try:
+        transport(system_prompt="system", user_prompt="user", model="ignored")
+    except RuntimeError as exc:
+        assert "Ollama is running" in str(exc)
+        assert "took too long" in str(exc)
+        assert "ollama serve" not in str(exc)
+    else:
+        raise AssertionError("Expected slow generation timeout error.")
+
+
+def test_ollama_health_server_unavailable(monkeypatch) -> None:
+    def fake_urlopen(request, timeout):
+        raise urlerror.URLError("offline")
+
+    monkeypatch.setattr("astra.service.urlrequest.urlopen", fake_urlopen)
+
+    try:
+        check_ollama_health(base_url="http://127.0.0.1:11434", ollama_model="llama3.1:8b")
+    except RuntimeError as exc:
+        assert "Ollama is not reachable" in str(exc)
+        assert "ollama serve" in str(exc)
+    else:
+        raise AssertionError("Expected unavailable server error.")
 
 
 def test_generator_rewrites_weak_post() -> None:

@@ -174,6 +174,18 @@ def describe_launch_pack_command(args: Sequence[str]) -> str:
     return "running Astra command"
 
 
+def launch_pack_step_label(args: Sequence[str]) -> str:
+    if args[:2] == ["campaign", "create"]:
+        return "campaign"
+    if args[:2] == ["posts", "draft"]:
+        return f"{_arg_value(args, '--channel') or 'post'} drafts"
+    if args[:2] == ["replies", "draft"]:
+        return f"{_arg_value(args, '--scenario') or 'reply'} reply"
+    if args and args[0] == "market-log-template":
+        return "market log"
+    return "command"
+
+
 def launch_pack_progress_messages(commands: Sequence[Sequence[str]] | None = None) -> list[str]:
     selected_commands = list(commands or continuity_launch_pack_commands())
     total = len(selected_commands)
@@ -203,7 +215,8 @@ def run_launch_pack_commands(
         status = "OK" if result.ok else "FAILED"
         if not result.ok:
             failures += 1
-        sections.extend([f"{index}. {status}: {' '.join(args)}", result.display_text, ""])
+        failure_detail = f" ({launch_pack_step_label(args)} failed)" if not result.ok else ""
+        sections.extend([f"{index}. {status}{failure_detail}: {' '.join(args)}", result.display_text, ""])
     if failures:
         sections.append(
             f"Finished with {failures} failed step(s). Saved drafts may still exist from later successful steps. "

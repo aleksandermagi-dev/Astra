@@ -226,10 +226,26 @@ def test_run_launch_pack_commands_summarizes_partial_failure() -> None:
     result = run_launch_pack_commands(cli_runner=fake_runner)
 
     assert result.ok is False
-    assert "FAILED: posts draft" in result.display_text
+    assert "FAILED (reddit drafts failed): posts draft" in result.display_text
     assert "missing OPENAI_API_KEY" in result.display_text
     assert "Saved drafts may still exist from later successful steps" in result.display_text
     assert "No approval, queue, or publish action was run" in result.display_text
+
+
+def test_run_launch_pack_commands_names_campaign_failure_and_later_success() -> None:
+    def fake_runner(argv, *, stdout, stderr):
+        if argv[:2] == ["campaign", "create"]:
+            stderr.write("Ollama is running, but this request took too long")
+            return 1
+        stdout.write("saved later step")
+        return 0
+
+    result = run_launch_pack_commands(cli_runner=fake_runner)
+
+    assert result.ok is False
+    assert "1. FAILED (campaign failed): campaign create" in result.display_text
+    assert "2. OK: posts draft" in result.display_text
+    assert "Ollama is running, but this request took too long" in result.display_text
 
 
 def test_busy_button_state_maps_to_tk_states() -> None:
