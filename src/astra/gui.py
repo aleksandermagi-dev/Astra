@@ -205,7 +205,10 @@ def run_launch_pack_commands(
             failures += 1
         sections.extend([f"{index}. {status}: {' '.join(args)}", result.display_text, ""])
     if failures:
-        sections.append(f"Finished with {failures} failed step(s). No approval, queue, or publish action was run.")
+        sections.append(
+            f"Finished with {failures} failed step(s). Saved drafts may still exist from later successful steps. "
+            "No approval, queue, or publish action was run."
+        )
         return GuiCommandResult(exit_code=1, output="\n".join(sections).strip(), error="")
     sections.append("Launch pack created as drafts. Review, approve, queue, and publish manually.")
     return GuiCommandResult(exit_code=0, output="\n".join(sections).strip(), error="")

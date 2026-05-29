@@ -38,11 +38,45 @@ def _clean_string(value: Any, field_name: str) -> str:
     return cleaned
 
 
+def normalize_model_text(value: Any, field_name: str) -> str:
+    if isinstance(value, str):
+        return _clean_string(value, field_name)
+    if isinstance(value, list):
+        parts = [normalize_model_text(item, field_name) for item in value if _model_value_has_text(item)]
+        return _clean_string(" ".join(parts), field_name)
+    if isinstance(value, dict):
+        parts = [
+            f"{normalize_model_text(key, field_name)}: {normalize_model_text(item, field_name)}"
+            for key, item in value.items()
+            if _model_value_has_text(key) and _model_value_has_text(item)
+        ]
+        return _clean_string("; ".join(parts), field_name)
+    raise ValueError(f"{field_name} must be a string, list, or object with text.")
+
+
+def normalize_optional_model_text(value: Any, field_name: str) -> str | None:
+    if value is None or value == "":
+        return None
+    return normalize_model_text(value, field_name)
+
+
+def _model_value_has_text(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return any(_model_value_has_text(item) for item in value)
+    if isinstance(value, dict):
+        return any(_model_value_has_text(key) and _model_value_has_text(item) for key, item in value.items())
+    return bool(str(value).strip())
+
+
 def _normalize_lines(value: Any) -> list[str]:
     if isinstance(value, str):
         lines = [line.strip() for line in value.splitlines() if line.strip()]
     elif isinstance(value, list):
-        lines = [_clean_string(item, "script line") for item in value if str(item).strip()]
+        lines = [normalize_model_text(item, "script line") for item in value if _model_value_has_text(item)]
     else:
         raise ValueError("script_lines must be a list of strings or a multiline string.")
     if not lines:
@@ -118,15 +152,15 @@ class ContentPost:
     suggested_post_time: str = "afternoon"
 
     def __post_init__(self) -> None:
-        self.topic = _clean_string(self.topic, "topic")
-        self.hook = _clean_string(self.hook, "hook")
+        self.topic = normalize_model_text(self.topic, "topic")
+        self.hook = normalize_model_text(self.hook, "hook")
         self.script_lines = _normalize_lines(self.script_lines)
-        self.caption = _clean_string(self.caption, "caption")
+        self.caption = normalize_model_text(self.caption, "caption")
         self.tags = _normalize_tags(self.tags)
         if self.platform_notes is not None:
-            self.platform_notes = _clean_string(self.platform_notes, "platform_notes")
-        self.retention_check = _clean_string(self.retention_check, "retention_check")
-        self.suggested_post_time = _clean_string(self.suggested_post_time, "suggested_post_time").lower()
+            self.platform_notes = normalize_model_text(self.platform_notes, "platform_notes")
+        self.retention_check = normalize_model_text(self.retention_check, "retention_check")
+        self.suggested_post_time = normalize_model_text(self.suggested_post_time, "suggested_post_time").lower()
         if len([chunk for chunk in self.retention_check.split(".") if chunk.strip()]) > 1:
             raise ValueError("retention_check must be one short sentence.")
 
@@ -248,10 +282,10 @@ class WorkflowContentItem:
 
     def __post_init__(self) -> None:
         self.id = _clean_string(self.id, "id")
-        self.topic = _clean_string(self.topic, "topic")
-        self.hook = _clean_string(self.hook, "hook")
+        self.topic = normalize_model_text(self.topic, "topic")
+        self.hook = normalize_model_text(self.hook, "hook")
         self.script_lines = _normalize_lines(self.script_lines)
-        self.caption = _clean_string(self.caption, "caption")
+        self.caption = normalize_model_text(self.caption, "caption")
         self.hashtags = _normalize_tags(self.hashtags)
         self.platform = _clean_string(self.platform, "platform").lower()
         valid_platforms = VALID_WORKFLOW_PLATFORMS | {"master"}
@@ -266,8 +300,8 @@ class WorkflowContentItem:
         if self.workflow_stage not in VALID_WORKFLOW_STAGES:
             raise ValueError("workflow_stage must be master or platform_variant.")
         self.source_item_id = _normalize_optional_string(self.source_item_id, "source_item_id")
-        self.platform_notes = _normalize_optional_string(self.platform_notes, "platform_notes")
-        self.retention_check = _clean_string(self.retention_check, "retention_check")
+        self.platform_notes = normalize_optional_model_text(self.platform_notes, "platform_notes")
+        self.retention_check = normalize_model_text(self.retention_check, "retention_check")
         if not isinstance(self.safety, SafetyAssessment):
             self.safety = SafetyAssessment.from_mapping(self.safety)
         if self.workflow_stage == "master" and self.platform != "master":
@@ -390,22 +424,22 @@ class CampaignDay:
         self.channel = _clean_string(self.channel, "channel").lower()
         if self.channel not in VALID_WORKFLOW_PLATFORMS:
             raise ValueError("channel must be a supported PR channel.")
-        self.angle = _clean_string(self.angle, "angle")
-        self.cta = _clean_string(self.cta, "cta")
-        self.reply_focus = _clean_string(self.reply_focus, "reply_focus")
-        self.objection_to_watch = _clean_string(self.objection_to_watch, "objection_to_watch")
-        self.tracking_goal = _clean_string(self.tracking_goal, "tracking_goal")
+        self.angle = normalize_model_text(self.angle, "angle")
+        self.cta = normalize_model_text(self.cta, "cta")
+        self.reply_focus = normalize_model_text(self.reply_focus, "reply_focus")
+        self.objection_to_watch = normalize_model_text(self.objection_to_watch, "objection_to_watch")
+        self.tracking_goal = normalize_model_text(self.tracking_goal, "tracking_goal")
 
     @classmethod
     def from_mapping(cls, payload: dict[str, Any]) -> "CampaignDay":
         return cls(
             day=int(payload.get("day", 0)),
             channel=str(payload.get("channel", "")),
-            angle=str(payload.get("angle", "")),
-            cta=str(payload.get("cta", "")),
-            reply_focus=str(payload.get("reply_focus", "")),
-            objection_to_watch=str(payload.get("objection_to_watch", "")),
-            tracking_goal=str(payload.get("tracking_goal", "")),
+            angle=payload.get("angle", ""),
+            cta=payload.get("cta", ""),
+            reply_focus=payload.get("reply_focus", ""),
+            objection_to_watch=payload.get("objection_to_watch", ""),
+            tracking_goal=payload.get("tracking_goal", ""),
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -421,22 +455,22 @@ class CampaignPlan:
     notes: str = ""
 
     def __post_init__(self) -> None:
-        self.product = _clean_string(self.product, "product")
-        self.goal = _clean_string(self.goal, "goal")
-        self.summary = _clean_string(self.summary, "summary")
+        self.product = normalize_model_text(self.product, "product")
+        self.goal = normalize_model_text(self.goal, "goal")
+        self.summary = normalize_model_text(self.summary, "summary")
         if not self.days:
             raise ValueError("campaign plan must include at least one day.")
         self.days = [day if isinstance(day, CampaignDay) else CampaignDay.from_mapping(day) for day in self.days]
-        self.notes = str(self.notes or "").strip()
+        self.notes = normalize_optional_model_text(self.notes, "notes") or ""
 
     @classmethod
     def from_mapping(cls, payload: dict[str, Any]) -> "CampaignPlan":
         return cls(
-            product=str(payload.get("product", "")),
-            goal=str(payload.get("goal", "")),
-            summary=str(payload.get("summary", "")),
+            product=payload.get("product", ""),
+            goal=payload.get("goal", ""),
+            summary=payload.get("summary", ""),
             days=[CampaignDay.from_mapping(item) for item in payload.get("days", [])],
-            notes=str(payload.get("notes", "")),
+            notes=payload.get("notes", ""),
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -459,24 +493,24 @@ class ReplyDraft:
     tracking_note: str
 
     def __post_init__(self) -> None:
-        self.product = _clean_string(self.product, "product")
+        self.product = normalize_model_text(self.product, "product")
         self.scenario = _clean_string(self.scenario, "scenario").lower()
         if self.scenario not in VALID_REPLY_SCENARIOS:
             raise ValueError("scenario must be a supported reply scenario.")
-        self.user_signal = _clean_string(self.user_signal, "user_signal")
-        self.reply = _clean_string(self.reply, "reply")
-        self.follow_up = _clean_string(self.follow_up, "follow_up")
-        self.tracking_note = _clean_string(self.tracking_note, "tracking_note")
+        self.user_signal = normalize_model_text(self.user_signal, "user_signal")
+        self.reply = normalize_model_text(self.reply, "reply")
+        self.follow_up = normalize_model_text(self.follow_up, "follow_up")
+        self.tracking_note = normalize_model_text(self.tracking_note, "tracking_note")
 
     @classmethod
     def from_mapping(cls, payload: dict[str, Any]) -> "ReplyDraft":
         return cls(
-            product=str(payload.get("product", "")),
+            product=payload.get("product", ""),
             scenario=str(payload.get("scenario", "")),
-            user_signal=str(payload.get("user_signal", "")),
-            reply=str(payload.get("reply", "")),
-            follow_up=str(payload.get("follow_up", "")),
-            tracking_note=str(payload.get("tracking_note", "")),
+            user_signal=payload.get("user_signal", ""),
+            reply=payload.get("reply", ""),
+            follow_up=payload.get("follow_up", ""),
+            tracking_note=payload.get("tracking_note", ""),
         )
 
     def to_mapping(self) -> dict[str, Any]:

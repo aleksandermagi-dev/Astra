@@ -228,6 +228,7 @@ def test_run_launch_pack_commands_summarizes_partial_failure() -> None:
     assert result.ok is False
     assert "FAILED: posts draft" in result.display_text
     assert "missing OPENAI_API_KEY" in result.display_text
+    assert "Saved drafts may still exist from later successful steps" in result.display_text
     assert "No approval, queue, or publish action was run" in result.display_text
 
 

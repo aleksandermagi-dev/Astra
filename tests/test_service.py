@@ -149,6 +149,83 @@ def test_generator_formats_master_item_for_platform() -> None:
     assert item.safety.decision == "PASS"
 
 
+def test_generator_normalizes_ollama_shaped_product_posts_and_preserves_channel() -> None:
+    generator = AstraGenerator(
+        AstraConfig(api_key="x"),
+        transport=lambda **_: json.dumps(
+            {
+                "posts": [
+                    {
+                        "topic": ["Continuity Layer", "launch"],
+                        "hook": ["Stop re-explaining", "your project to AI?"],
+                        "script_lines": [
+                            {"pain": "Every agent starts cold", "fix": "Continuity packets carry the current state"},
+                            "It is local-first and Windows-first while the beta is early.",
+                        ],
+                        "caption": {"cta": "GitHub is open", "offer": "$19 early access"},
+                        "hashtags": ["#ai"],
+                        "platform_notes": ["This sounds like Reddit even though the request is Bluesky."],
+                        "retention_check": ["The pain is clear immediately"],
+                        "suggested_post_time": "afternoon",
+                    }
+                ]
+            }
+        ),
+    )
+
+    items = generator.draft_product_posts(channel="x_bluesky", count=1, goal="Launch")
+
+    assert items[0].platform == "x_bluesky"
+    assert items[0].hook == "Stop re-explaining your project to AI?"
+    assert items[0].caption == "cta: GitHub is open; offer: $19 early access"
+    assert "requested Bluesky" in (items[0].platform_notes or "")
+
+
+def test_generator_normalizes_ollama_shaped_campaign_and_reply() -> None:
+    campaign_generator = AstraGenerator(
+        AstraConfig(api_key="x"),
+        transport=lambda **_: json.dumps(
+            {
+                "product": ["Continuity", "Layer"],
+                "goal": ["Launch", "early access"],
+                "summary": {"summary": "Founder-led launch with practical posts."},
+                "days": [
+                    {
+                        "day": 1,
+                        "channel": "reddit",
+                        "angle": ["Ask about repeated context"],
+                        "cta": {"primary": "GitHub"},
+                        "reply_focus": ["workflow pain"],
+                        "objection_to_watch": ["Why not README?"],
+                        "tracking_goal": ["replies"],
+                    }
+                ],
+                "notes": ["Review every draft before posting."],
+            }
+        ),
+    )
+    reply_generator = AstraGenerator(
+        AstraConfig(api_key="x"),
+        transport=lambda **_: json.dumps(
+            {
+                "product": ["Continuity", "Layer"],
+                "scenario": "why_not_readme_notion",
+                "user_signal": ["Why not just use Notion?"],
+                "reply": {"ack": "Good question.", "difference": "Astra needs current agent-ready packets."},
+                "follow_up": ["What context do you repeat most?"],
+                "tracking_note": {"objection": "docs comparison"},
+            }
+        ),
+    )
+
+    plan = campaign_generator.generate_campaign_plan(goal="Launch", days=7)
+    reply = reply_generator.draft_reply(scenario="why_not_readme_notion")
+
+    assert plan.product == "Continuity Layer"
+    assert plan.days[0].cta == "primary: GitHub"
+    assert reply.reply == "ack: Good question.; difference: Astra needs current agent-ready packets."
+
+
 def test_generator_discards_post_that_still_fails_after_rewrite() -> None:
     responses = iter(
         [

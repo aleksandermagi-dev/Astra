@@ -1,6 +1,16 @@
 import pytest
 
-from astra.models import CampaignDay, CampaignPlan, AnalyticsLogEntry, ContentPost, PerformanceRecord, ReplyDraft, SafetyAssessment, WorkflowContentItem
+from astra.models import (
+    CampaignDay,
+    CampaignPlan,
+    AnalyticsLogEntry,
+    ContentPost,
+    PerformanceRecord,
+    ReplyDraft,
+    SafetyAssessment,
+    WorkflowContentItem,
+    normalize_model_text,
+)
 
 
 def test_content_post_from_mapping_splits_multiline_script() -> None:
@@ -18,6 +28,33 @@ def test_content_post_from_mapping_splits_multiline_script() -> None:
         "It got scary when it got useful.",
         "That's when the leverage exploded.",
     ]
+
+
+def test_content_post_normalizes_ollama_list_and_object_text_fields() -> None:
+    post = ContentPost.from_mapping(
+        {
+            "topic": ["Continuity Layer", "launch"],
+            "hook": ["Stop re-explaining", "your project to AI."],
+            "script_lines": [{"pain": "Agents start cold.", "fix": "Continuity packets keep context small."}],
+            "caption": {"cta": "Try the beta", "price": "$19 early access"},
+            "hashtags": ["#ai"],
+            "platform_notes": ["Post as founder.", "Track objections."],
+            "retention_check": ["Names the pain fast"],
+            "suggested_post_time": "morning",
+        }
+    )
+
+    assert post.topic == "Continuity Layer launch"
+    assert post.hook == "Stop re-explaining your project to AI."
+    assert post.script_lines == ["pain: Agents start cold.; fix: Continuity packets keep context small."]
+    assert post.caption == "cta: Try the beta; price: $19 early access"
+    assert post.platform_notes == "Post as founder. Track objections."
+    assert post.retention_check == "Names the pain fast"
+
+
+def test_model_text_normalization_rejects_empty_values_with_field_name() -> None:
+    with pytest.raises(ValueError, match="hook cannot be empty"):
+        normalize_model_text([], "hook")
 
 
 def test_workflow_content_item_requires_source_for_platform_variant() -> None:
@@ -115,3 +152,41 @@ def test_campaign_plan_and_reply_draft_models_validate_pr_shapes() -> None:
         tracking_note="Track docs objection.",
     )
     assert reply.scenario == "skeptical_user"
+
+
+def test_campaign_plan_and_reply_draft_normalize_ollama_text_shapes() -> None:
+    plan = CampaignPlan.from_mapping(
+        {
+            "product": ["Continuity", "Layer"],
+            "goal": {"launch": "$19 early access"},
+            "summary": ["Use practical posts.", "Track replies."],
+            "days": [
+                {
+                    "day": 1,
+                    "channel": "reddit",
+                    "angle": ["Ask builders", "about repeated context."],
+                    "cta": {"primary": "GitHub", "secondary": "feedback form"},
+                    "reply_focus": ["context loss", "setup requests"],
+                    "objection_to_watch": {"docs": "Why not README?"},
+                    "tracking_goal": ["replies", "clicks"],
+                }
+            ],
+            "notes": {"approval": "draft-first"},
+        }
+    )
+    reply = ReplyDraft.from_mapping(
+        {
+            "product": ["Continuity", "Layer"],
+            "scenario": "skeptical_user",
+            "user_signal": ["Is this just Notion?"],
+            "reply": {"ack": "Fair question.", "answer": "Docs help, but agents need current packets."},
+            "follow_up": ["What do you paste most often?"],
+            "tracking_note": {"theme": "README objection"},
+        }
+    )
+
+    assert plan.product == "Continuity Layer"
+    assert plan.days[0].cta == "primary: GitHub; secondary: feedback form"
+    assert plan.notes == "approval: draft-first"
+    assert reply.reply == "ack: Fair question.; answer: Docs help, but agents need current packets."
+    assert reply.tracking_note == "theme: README objection"

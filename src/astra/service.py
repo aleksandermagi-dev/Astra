@@ -129,7 +129,7 @@ class AstraGenerator:
         rewrite: bool = True,
     ) -> list[ContentPost]:
         payload = self._request_json(build_batch_prompt(topic, count))
-        posts = [ContentPost.from_mapping(item) for item in payload.get("posts", [])]
+        posts = [_parse_content_post(item, context="batch post") for item in payload.get("posts", [])]
         if rewrite:
             posts = [self._stabilize_post(post)[0] for post in posts]
         return posts
@@ -142,7 +142,7 @@ class AstraGenerator:
         recent_items: list[WorkflowContentItem] | None = None,
     ) -> list[WorkflowContentItem]:
         payload = self._request_json(build_batch_prompt(topic, count))
-        posts = [ContentPost.from_mapping(item) for item in payload.get("posts", [])]
+        posts = [_parse_content_post(item, context="workflow item") for item in payload.get("posts", [])]
         items: list[WorkflowContentItem] = []
         for post in posts:
             stable_post, safety = self._stabilize_post(post, recent_items=recent_items)
@@ -157,7 +157,10 @@ class AstraGenerator:
 
     def generate_campaign_plan(self, *, goal: str, days: int = 7) -> CampaignPlan:
         payload = self._request_json(build_campaign_prompt(goal, self.config.active_product, days=days))
-        return CampaignPlan.from_mapping(payload)
+        try:
+            return CampaignPlan.from_mapping(payload)
+        except ValueError as exc:
+            raise ValueError(f"campaign plan response could not be parsed: {exc}") from exc
 
     def draft_product_posts(
         self,
@@ -168,10 +171,13 @@ class AstraGenerator:
         recent_items: list[WorkflowContentItem] | None = None,
     ) -> list[WorkflowContentItem]:
         payload = self._request_json(build_posts_prompt(self.config.active_product, channel, count, goal=goal))
-        posts = [ContentPost.from_mapping(item) for item in payload.get("posts", [])]
+        posts = [_parse_content_post(item, context=f"{channel} post draft") for item in payload.get("posts", [])]
         items: list[WorkflowContentItem] = []
         for post in posts:
             stable_post, safety = self._stabilize_post(post, recent_items=recent_items)
+            warning = _channel_mismatch_warning(channel, stable_post)
+            if warning:
+                stable_post.platform_notes = _join_optional_notes(stable_post.platform_notes, warning)
             items.append(
                 WorkflowContentItem.from_post(
                     stable_post,
@@ -185,7 +191,10 @@ class AstraGenerator:
 
     def draft_reply(self, *, scenario: str, user_signal: str | None = None) -> ReplyDraft:
         payload = self._request_json(build_reply_prompt(self.config.active_product, scenario, user_signal=user_signal))
-        return ReplyDraft.from_mapping(payload)
+        try:
+            return ReplyDraft.from_mapping(payload)
+        except ValueError as exc:
+            raise ValueError(f"{scenario} reply response could not be parsed: {exc}") from exc
 
     def format_for_platform(
         self,
@@ -195,7 +204,7 @@ class AstraGenerator:
         recent_items: list[WorkflowContentItem] | None = None,
     ) -> WorkflowContentItem:
         payload = self._request_json(build_format_prompt(_workflow_item_to_dict(item), platform))
-        post, safety = self._stabilize_post(ContentPost.from_mapping(payload), recent_items=recent_items)
+        post, safety = self._stabilize_post(_parse_content_post(payload, context=f"{platform} formatted post"), recent_items=recent_items)
         return WorkflowContentItem.from_post(
             post,
             platform=platform,
@@ -241,7 +250,7 @@ class AstraGenerator:
 
     def _rewrite_post(self, post: ContentPost, safety: SafetyAssessment) -> ContentPost:
         payload = self._request_json(build_rewrite_prompt(_post_to_dict(post), safety_reasons=safety.reasons))
-        return ContentPost.from_mapping(payload)
+        return _parse_content_post(payload, context="rewrite post")
 
     def _request_json(self, user_prompt: str) -> dict[str, Any]:
         raw = self.transport(
@@ -260,6 +269,39 @@ def _extract_json(raw: str) -> str:
     if cleaned.startswith("```"):
         cleaned = cleaned.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     return cleaned
+
+
+def _parse_content_post(payload: dict[str, Any], *, context: str) -> ContentPost:
+    try:
+        return ContentPost.from_mapping(payload)
+    except ValueError as exc:
+        raise ValueError(f"{context} response could not be parsed: {exc}") from exc
+
+
+def _channel_mismatch_warning(channel: str, post: ContentPost) -> str:
+    labels = {
+        "reddit": "Reddit",
+        "x_bluesky": "Bluesky",
+        "indie_hackers": "Indie Hackers",
+        "hacker_news": "Hacker News",
+        "devto": "Dev.to",
+        "email_update": "email",
+        "direct_reply": "reply",
+    }
+    requested = labels.get(channel, channel)
+    combined = " ".join([post.topic, post.hook, *post.script_lines, post.caption, post.platform_notes or ""]).lower()
+    mismatches = [
+        label
+        for key, label in labels.items()
+        if key != channel and label.lower() in combined
+    ]
+    if not mismatches:
+        return ""
+    return f"Review channel fit: requested {requested}, but draft mentions {', '.join(sorted(set(mismatches)))}."
+
+
+def _join_optional_notes(existing: str | None, warning: str) -> str:
+    return f"{existing} {warning}".strip() if existing else warning
 
 
 def _looks_weak(post: ContentPost) -> bool:
