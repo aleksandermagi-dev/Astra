@@ -1,6 +1,13 @@
 from astra.config import AstraConfig
 from astra.models import WorkflowContentItem
-from astra.service import AstraGenerator, check_ollama_health, ollama_transport_factory
+from astra.service import (
+    AstraGenerator,
+    check_ollama_health,
+    format_ollama_http_error,
+    is_ollama_cuda_error,
+    ollama_diagnostics,
+    ollama_transport_factory,
+)
 import json
 from urllib import error as urlerror
 
@@ -143,6 +150,23 @@ def test_ollama_transport_timeout_says_running_but_slow(monkeypatch) -> None:
         raise AssertionError("Expected slow generation timeout error.")
 
 
+def test_ollama_http_500_cuda_error_has_gpu_guidance() -> None:
+    body = "error for model: object initialization failed CUDA error"
+
+    message = format_ollama_http_error(500, base_url="http://127.0.0.1:11434", body=body)
+
+    assert is_ollama_cuda_error(body) is True
+    assert "GPU/CUDA initialization failed" in message
+    assert "Close GPU-heavy apps" in message
+
+
+def test_ollama_http_500_generic_error_stays_generic() -> None:
+    message = format_ollama_http_error(500, base_url="http://127.0.0.1:11434", body="unexpected failure")
+
+    assert "generation request failed" in message
+    assert "GPU/CUDA" not in message
+
+
 def test_ollama_health_server_unavailable(monkeypatch) -> None:
     def fake_urlopen(request, timeout):
         raise urlerror.URLError("offline")
@@ -156,6 +180,55 @@ def test_ollama_health_server_unavailable(monkeypatch) -> None:
         assert "ollama serve" in str(exc)
     else:
         raise AssertionError("Expected unavailable server error.")
+
+
+def test_ollama_diagnostics_reports_no_nvidia_smi(monkeypatch) -> None:
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps({"models": [{"name": "llama3.1:8b"}]}).encode("utf-8")
+
+    def fake_run(*args, **kwargs):
+        raise OSError("missing")
+
+    monkeypatch.setattr("astra.service.urlrequest.urlopen", lambda request, timeout: FakeResponse())
+
+    lines = ollama_diagnostics(base_url="http://127.0.0.1:11434", ollama_model="llama3.1:8b", run_command=fake_run)
+
+    assert any("Ollama is running" in line for line in lines)
+    assert "GPU diagnostics: nvidia-smi unavailable." in lines
+
+
+def test_ollama_diagnostics_reports_gpu_busy(monkeypatch) -> None:
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps({"models": [{"name": "llama3.1:8b"}]}).encode("utf-8")
+
+    class FakeCompleted:
+        returncode = 0
+        stdout = "NVIDIA GeForce RTX 4070 | 7605MiB / 12282MiB | ollama.exe"
+        stderr = ""
+
+    monkeypatch.setattr("astra.service.urlrequest.urlopen", lambda request, timeout: FakeResponse())
+
+    lines = ollama_diagnostics(
+        base_url="http://127.0.0.1:11434",
+        ollama_model="llama3.1:8b",
+        run_command=lambda *args, **kwargs: FakeCompleted(),
+    )
+
+    assert "GPU diagnostics: NVIDIA GPU is visible and appears busy." in lines
 
 
 def test_generator_rewrites_weak_post() -> None:

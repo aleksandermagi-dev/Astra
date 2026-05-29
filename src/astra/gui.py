@@ -12,6 +12,7 @@ from .cli import run_cli
 from .config import AstraConfig
 from .models import WorkflowContentItem
 from .outputs import ensure_output_dirs, load_content_item, load_publish_log, open_outputs_directory
+from .service import ollama_diagnostics
 from .tendril.settings import TendrilSettings
 
 
@@ -199,6 +200,29 @@ def busy_button_state(is_busy: bool) -> str:
     return "disabled" if is_busy else "normal"
 
 
+def text_widget_content(widget: tk.Text) -> str:
+    return widget.get("1.0", "end-1c")
+
+
+def copy_to_clipboard(root: tk.Tk, text: str) -> str:
+    root.clipboard_clear()
+    root.clipboard_append(text)
+    return text
+
+
+def paste_clipboard_into_text(widget: tk.Text, root: tk.Tk) -> str:
+    text = root.clipboard_get()
+    widget.insert("insert", text)
+    return text
+
+
+def select_all_text(widget: tk.Text) -> str:
+    widget.tag_add("sel", "1.0", "end-1c")
+    widget.mark_set("insert", "1.0")
+    widget.see("insert")
+    return "break"
+
+
 def run_launch_pack_commands(
     *,
     cli_runner: CliRunner = run_cli,
@@ -377,10 +401,16 @@ def item_action_state(path: str | Path) -> dict[str, bool]:
         "publish": item.status == "queued" and item.platform in {"x_bluesky", "bluesky"} and safety_pass,
         "mark_posted": item.status == "queued",
         "open_file": True,
+        "copy_item": True,
+        "copy_path": True,
     }
 
 
-def settings_status_lines(config: AstraConfig | None = None) -> list[str]:
+def settings_status_lines(
+    config: AstraConfig | None = None,
+    *,
+    diagnostics_func: Callable[..., list[str]] = ollama_diagnostics,
+) -> list[str]:
     loaded = config or AstraConfig.load()
     lines = [
         f"Generation provider: {loaded.active_provider} ({loaded.provider})",
@@ -394,6 +424,8 @@ def settings_status_lines(config: AstraConfig | None = None) -> list[str]:
     ]
     if not loaded.bluesky_posting.handle or not loaded.bluesky_posting.app_password:
         lines.append("If you just configured Bluesky credentials, restart Astra so the app can read them.")
+    if loaded.active_provider == "ollama":
+        lines.extend(diagnostics_func(base_url=loaded.ollama_url, ollama_model=loaded.ollama_model))
     return lines
 
 
@@ -445,6 +477,7 @@ class AstraGuiApp:
         self.current_item_path: Path | None = None
         self.current_tree_kind = "drafts"
         self.is_busy = False
+        self._text_context_menu: tk.Menu | None = None
 
         self._build_ui()
 
@@ -501,6 +534,7 @@ class AstraGuiApp:
         self.request_text = tk.Text(controls, height=4, wrap="word", font=("Segoe UI", 10))
         self.request_text.grid(row=0, column=0, columnspan=6, sticky="ew", pady=(0, 8))
         self.request_text.insert("1.0", "draft 5 Reddit posts for Continuity Layer launch")
+        self._attach_text_menu(self.request_text, editable=True)
 
         ttk.Label(controls, text="Product").grid(row=1, column=0, sticky="w")
         products = ttk.Combobox(
@@ -528,6 +562,9 @@ class AstraGuiApp:
         ttk.Button(controls, text="Run Request", command=self.run_request).grid(row=2, column=3, sticky="w", padx=(0, 8))
         ttk.Button(controls, text="Campaign", command=self.run_campaign).grid(row=2, column=4, sticky="w", padx=(0, 8))
         ttk.Button(controls, text="Draft Posts", command=self.run_posts).grid(row=2, column=5, sticky="e")
+        ttk.Button(controls, text="Paste Request", command=self.paste_request).grid(row=3, column=1, sticky="w", pady=(10, 0), padx=(0, 8))
+        ttk.Button(controls, text="Copy Request", command=self.copy_request).grid(row=3, column=2, sticky="w", pady=(10, 0), padx=(0, 8))
+        ttk.Button(controls, text="Clear Request", command=self.clear_request).grid(row=3, column=3, sticky="w", pady=(10, 0), padx=(0, 8))
         ttk.Button(controls, text="Continuity Launch Pack", command=self.run_continuity_launch_pack).grid(
             row=3,
             column=0,
@@ -542,9 +579,14 @@ class AstraGuiApp:
         output_frame.rowconfigure(0, weight=1)
         self.output_text = tk.Text(output_frame, wrap="word", font=("Consolas", 10))
         self.output_text.grid(row=0, column=0, sticky="nsew")
+        self._attach_text_menu(self.output_text, editable=False)
         scrollbar = ttk.Scrollbar(output_frame, orient="vertical", command=self.output_text.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.output_text.configure(yscrollcommand=scrollbar.set)
+        output_buttons = ttk.Frame(output_frame)
+        output_buttons.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ttk.Button(output_buttons, text="Copy Output", command=self.copy_output).pack(side="left", padx=(0, 6))
+        ttk.Button(output_buttons, text="Select All", command=lambda: select_all_text(self.output_text)).pack(side="left")
 
     def _build_workflow_tab(self, label: str, kind: str) -> None:
         frame = ttk.Frame(self.notebook, padding=(8, 8))
@@ -588,8 +630,10 @@ class AstraGuiApp:
         ttk.Button(controls, text="Account Status", command=lambda: self.run_command(accounts_status_args())).pack(side="left", padx=(0, 6))
         ttk.Button(controls, text="Publish Bluesky Queue", command=lambda: self.run_command(publish_queue_args("bluesky"))).pack(side="left", padx=(0, 6))
         ttk.Button(controls, text="Refresh Log", command=self.refresh_publish_log).pack(side="left")
+        ttk.Button(controls, text="Copy Text", command=lambda: self.copy_widget_text(self.publish_log_text, "Publish log copied.")).pack(side="left", padx=(6, 0))
         self.publish_log_text = tk.Text(frame, wrap="word", font=("Consolas", 10))
         self.publish_log_text.grid(row=1, column=0, sticky="nsew")
+        self._attach_text_menu(self.publish_log_text, editable=False)
 
     def _build_logs_tab(self) -> None:
         frame = ttk.Frame(self.notebook, padding=(12, 12))
@@ -608,7 +652,11 @@ class AstraGuiApp:
         frame.columnconfigure(0, weight=1)
         self.settings_text = tk.Text(frame, wrap="word", font=("Consolas", 10), height=12)
         self.settings_text.grid(row=0, column=0, sticky="nsew")
-        ttk.Button(frame, text="Refresh Settings", command=self.refresh_settings).grid(row=1, column=0, sticky="w", pady=(8, 0))
+        self._attach_text_menu(self.settings_text, editable=False)
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Button(buttons, text="Refresh Settings", command=self.refresh_settings).pack(side="left", padx=(0, 6))
+        ttk.Button(buttons, text="Copy Text", command=lambda: self.copy_widget_text(self.settings_text, "Settings copied.")).pack(side="left")
 
     def _make_inspector(self, parent: ttk.Frame) -> dict[str, object]:
         frame = ttk.Frame(parent)
@@ -616,6 +664,7 @@ class AstraGuiApp:
         frame.rowconfigure(0, weight=1)
         text = tk.Text(frame, wrap="word", font=("Consolas", 10), height=18)
         text.grid(row=0, column=0, sticky="nsew")
+        self._attach_text_menu(text, editable=False)
         buttons = ttk.Frame(frame)
         buttons.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         actions = {
@@ -624,6 +673,8 @@ class AstraGuiApp:
             "publish": ttk.Button(buttons, text="Publish", command=self.publish_selected_item),
             "mark_posted": ttk.Button(buttons, text="Mark Posted", command=self.mark_selected_posted),
             "open_file": ttk.Button(buttons, text="Open File", command=self.open_selected_file),
+            "copy_item": ttk.Button(buttons, text="Copy Item Text", command=lambda t=text: self.copy_widget_text(t, "Item text copied.")),
+            "copy_path": ttk.Button(buttons, text="Copy File Path", command=self.copy_selected_path),
         }
         for button in actions.values():
             button.pack(side="left", padx=(0, 4))
@@ -689,6 +740,35 @@ class AstraGuiApp:
             self.show_message(str(exc), ok=False)
             return
         self.run_command(args)
+
+    def paste_request(self) -> None:
+        try:
+            pasted = paste_clipboard_into_text(self.request_text, self.root)
+        except tk.TclError as exc:
+            self.show_message(f"Clipboard paste failed: {exc}", ok=False)
+            return
+        self.status_var.set(f"Pasted {len(pasted)} characters.")
+
+    def copy_request(self) -> None:
+        self.copy_widget_text(self.request_text, "Request copied.")
+
+    def clear_request(self) -> None:
+        self.request_text.delete("1.0", "end")
+        self.status_var.set("Request cleared.")
+
+    def copy_output(self) -> None:
+        self.copy_widget_text(self.output_text, "Output copied.")
+
+    def copy_widget_text(self, widget: tk.Text, status: str = "Copied.") -> None:
+        copied = copy_to_clipboard(self.root, text_widget_content(widget))
+        self.status_var.set(f"{status} {len(copied)} characters.")
+
+    def copy_selected_path(self) -> None:
+        if not self.current_item_path:
+            self.show_message("Select an item first.", ok=False)
+            return
+        copied = copy_to_clipboard(self.root, str(self.current_item_path))
+        self.status_var.set(f"File path copied. {len(copied)} characters.")
 
     def run_continuity_launch_pack(self) -> None:
         self.run_background_job(
@@ -865,6 +945,22 @@ class AstraGuiApp:
                 buttons.append(child)
             buttons.extend(self._iter_buttons(child))
         return buttons
+
+    def _attach_text_menu(self, widget: tk.Text, *, editable: bool) -> None:
+        widget.bind("<Control-a>", lambda _event, w=widget: select_all_text(w))
+        widget.bind("<Button-3>", lambda event, w=widget, e=editable: self._show_text_context_menu(event, w, editable=e))
+
+    def _show_text_context_menu(self, event: tk.Event, widget: tk.Text, *, editable: bool) -> str:
+        menu = tk.Menu(self.root, tearoff=0)
+        if editable:
+            menu.add_command(label="Cut", command=lambda: widget.event_generate("<<Cut>>"))
+        menu.add_command(label="Copy", command=lambda: widget.event_generate("<<Copy>>"))
+        if editable:
+            menu.add_command(label="Paste", command=lambda: widget.event_generate("<<Paste>>"))
+        menu.add_command(label="Select All", command=lambda: select_all_text(widget))
+        self._text_context_menu = menu
+        menu.tk_popup(event.x_root, event.y_root)
+        return "break"
 
 
 def main() -> int:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import socket
+import subprocess
 from typing import Any, Protocol
 from urllib import error as urlerror
 from urllib import request as urlrequest
@@ -24,6 +25,14 @@ from .safety_layer import AstraSafetyLayer
 
 OLLAMA_HEALTH_TIMEOUT_SECONDS = 5
 OLLAMA_GENERATE_TIMEOUT_SECONDS = 300
+OLLAMA_CUDA_ERROR_MARKERS = (
+    "cuda",
+    "gpu",
+    "ggml",
+    "object initialization failed",
+    "backend initialization",
+    "backend init",
+)
 
 
 class ResponseTransport(Protocol):
@@ -81,11 +90,7 @@ def ollama_transport_factory(*, base_url: str, ollama_model: str) -> ResponseTra
                 data = json.loads(response.read().decode("utf-8"))
         except urlerror.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace").strip()
-            detail = f" Ollama said: {body}" if body else ""
-            raise RuntimeError(
-                f"Ollama returned HTTP {exc.code} at {base_url}.{detail} "
-                f"Ollama is running, but the generation request failed."
-            ) from exc
+            raise RuntimeError(format_ollama_http_error(exc.code, base_url=base_url, body=body)) from exc
         except (TimeoutError, socket.timeout) as exc:
             raise RuntimeError(
                 f"Ollama is running at {base_url}, but this request took too long. "
@@ -142,6 +147,49 @@ def check_ollama_health(*, base_url: str, ollama_model: str) -> str:
             f"Run `ollama pull {ollama_model}`, then retry Astra."
         )
     return f"Ollama is running at {base_url} with model `{ollama_model}`."
+
+
+def format_ollama_http_error(status_code: int, *, base_url: str, body: str = "") -> str:
+    detail = f" Ollama said: {body}" if body else ""
+    if is_ollama_cuda_error(body):
+        return (
+            f"Ollama returned HTTP {status_code} at {base_url}.{detail} "
+            "Ollama is running, but GPU/CUDA initialization failed. "
+            "Close GPU-heavy apps or switch Ollama to CPU mode, then retry Astra."
+        )
+    return (
+        f"Ollama returned HTTP {status_code} at {base_url}.{detail} "
+        "Ollama is running, but the generation request failed."
+    )
+
+
+def is_ollama_cuda_error(body: str) -> bool:
+    lowered = body.lower()
+    return any(marker in lowered for marker in OLLAMA_CUDA_ERROR_MARKERS)
+
+
+def ollama_diagnostics(*, base_url: str, ollama_model: str, run_command=subprocess.run) -> list[str]:
+    lines: list[str] = []
+    try:
+        lines.append(check_ollama_health(base_url=base_url, ollama_model=ollama_model))
+    except RuntimeError as exc:
+        lines.append(str(exc))
+    try:
+        result = run_command(["nvidia-smi"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        lines.append("GPU diagnostics: nvidia-smi unavailable.")
+        return lines
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
+    if result.returncode != 0 or not output:
+        lines.append("GPU diagnostics: nvidia-smi unavailable.")
+        return lines
+    busy_note = "GPU diagnostics: NVIDIA GPU is visible"
+    if "MiB" in output or "ollama.exe" in output.lower():
+        busy_note += " and appears busy."
+    else:
+        busy_note += "."
+    lines.append(busy_note)
+    return lines
 
 
 def default_transport_for_config(config: AstraConfig) -> ResponseTransport:

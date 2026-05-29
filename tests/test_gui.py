@@ -16,9 +16,11 @@ from astra.gui import (
     approve_item_args,
     queue_item_args,
     busy_button_state,
+    copy_to_clipboard,
     mark_posted_args,
     describe_launch_pack_command,
     launch_pack_progress_messages,
+    paste_clipboard_into_text,
     publish_item_args,
     publish_log_args,
     publish_queue_args,
@@ -29,8 +31,10 @@ from astra.gui import (
     review_queue_args,
     run_cli_capture,
     run_launch_pack_commands,
+    select_all_text,
     settings_status_lines,
     tendril_list_args,
+    text_widget_content,
 )
 from astra.config import AstraConfig
 from astra.models import WorkflowContentItem
@@ -253,6 +257,59 @@ def test_busy_button_state_maps_to_tk_states() -> None:
     assert busy_button_state(False) == "normal"
 
 
+class _FakeRoot:
+    def __init__(self, clipboard: str = "") -> None:
+        self.clipboard = clipboard
+
+    def clipboard_clear(self) -> None:
+        self.clipboard = ""
+
+    def clipboard_append(self, text: str) -> None:
+        self.clipboard += text
+
+    def clipboard_get(self) -> str:
+        return self.clipboard
+
+
+class _FakeText:
+    def __init__(self, text: str = "") -> None:
+        self.text = text
+        self.tags = []
+        self.insert_mark = ""
+        self.seen = ""
+
+    def get(self, start: str, end: str) -> str:
+        assert (start, end) == ("1.0", "end-1c")
+        return self.text
+
+    def insert(self, index: str, value: str) -> None:
+        assert index == "insert"
+        self.text += value
+
+    def tag_add(self, tag: str, start: str, end: str) -> None:
+        self.tags.append((tag, start, end))
+
+    def mark_set(self, mark: str, index: str) -> None:
+        self.insert_mark = f"{mark}:{index}"
+
+    def see(self, index: str) -> None:
+        self.seen = index
+
+
+def test_clipboard_helpers_copy_paste_and_select_all() -> None:
+    root = _FakeRoot(" pasted")
+    widget = _FakeText("hello")
+
+    assert text_widget_content(widget) == "hello"
+    assert copy_to_clipboard(root, "copied") == "copied"
+    assert root.clipboard == "copied"
+    root.clipboard = " pasted"
+    assert paste_clipboard_into_text(widget, root) == " pasted"
+    assert widget.text == "hello pasted"
+    assert select_all_text(widget) == "break"
+    assert ("sel", "1.0", "end-1c") in widget.tags
+
+
 def test_gui_batch_args_requires_topic() -> None:
     try:
         batch_args(topic="", count=3)
@@ -349,6 +406,7 @@ def test_settings_status_lines_do_not_expose_secrets() -> None:
 
 
 def test_settings_status_lines_include_bluesky_restart_guidance() -> None:
-    lines = settings_status_lines(AstraConfig())
+    lines = settings_status_lines(AstraConfig(), diagnostics_func=lambda **_: ["Ollama diagnostic skipped."])
 
     assert any("restart Astra" in line for line in lines)
+    assert "Ollama diagnostic skipped." in lines
