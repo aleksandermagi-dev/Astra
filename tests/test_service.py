@@ -395,6 +395,87 @@ def test_generator_normalizes_ollama_shaped_campaign_and_reply() -> None:
     assert reply.reply == "ack: Good question.; difference: Astra needs current agent-ready packets."
 
 
+def test_generator_normalizes_mixed_campaign_channel_aliases() -> None:
+    generator = AstraGenerator(
+        AstraConfig(api_key="x"),
+        transport=lambda **_: json.dumps(
+            {
+                "product": "Continuity Layer",
+                "goal": "Launch early access",
+                "summary": "Founder-led launch with practical posts.",
+                "days": [
+                    {
+                        "day": 1,
+                        "channel": "X / Bluesky",
+                        "angle": "Name the repeated-context pain.",
+                        "cta": "Open GitHub.",
+                        "reply_focus": "Context loss.",
+                        "objection_to_watch": "Why another tool?",
+                        "tracking_goal": "Replies.",
+                    },
+                    {
+                        "day": 2,
+                        "channel": "HackerNews",
+                        "angle": "Technical inspection.",
+                        "cta": "Inspect the repo.",
+                        "reply_focus": "Local-first details.",
+                        "objection_to_watch": "Why not README?",
+                        "tracking_goal": "Technical comments.",
+                    },
+                    {
+                        "day": 3,
+                        "channel": "Indie-Hackers",
+                        "angle": "Founder validation story.",
+                        "cta": "Join early access.",
+                        "reply_focus": "Buyer pain.",
+                        "objection_to_watch": "Pricing.",
+                        "tracking_goal": "Setup requests.",
+                    },
+                    {
+                        "day": 4,
+                        "channel": "Dev.to",
+                        "angle": "Workflow explanation.",
+                        "cta": "Try the beta.",
+                        "reply_focus": "Implementation questions.",
+                        "objection_to_watch": "Local setup friction.",
+                        "tracking_goal": "Comments.",
+                    },
+                    {
+                        "day": 5,
+                        "channel": "Newsletter",
+                        "angle": "Compact product update.",
+                        "cta": "Reply with workflow pain.",
+                        "reply_focus": "Signals from opt-ins.",
+                        "objection_to_watch": "Need for setup help.",
+                        "tracking_goal": "Replies.",
+                    },
+                    {
+                        "day": 6,
+                        "channel": "DM",
+                        "angle": "Direct reply follow-up.",
+                        "cta": "Ask one workflow question.",
+                        "reply_focus": "Specific repeated context.",
+                        "objection_to_watch": "Trust boundaries.",
+                        "tracking_goal": "Conversations.",
+                    },
+                ],
+                "notes": "Review every draft before posting.",
+            }
+        ),
+    )
+
+    plan = generator.generate_campaign_plan(goal="Launch early access", days=6)
+
+    assert [day.channel for day in plan.days] == [
+        "x_bluesky",
+        "hacker_news",
+        "indie_hackers",
+        "devto",
+        "email_update",
+        "direct_reply",
+    ]
+
+
 def test_generator_discards_post_that_still_fails_after_rewrite() -> None:
     responses = iter(
         [

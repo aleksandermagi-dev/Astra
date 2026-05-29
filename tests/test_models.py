@@ -196,11 +196,27 @@ def test_campaign_day_normalizes_channel_aliases() -> None:
     aliases = {
         "bluesky": "x_bluesky",
         "x": "x_bluesky",
-        "x/bluesky": "x_bluesky",
-        "hn": "hacker_news",
+        "X / Bluesky": "x_bluesky",
+        "X-Bluesky": "x_bluesky",
+        "X and Bluesky": "x_bluesky",
+        "Twitter/X": "x_bluesky",
+        "Twitter": "x_bluesky",
+        "HN": "hacker_news",
+        "HackerNews": "hacker_news",
+        "Hacker-News": "hacker_news",
         "Hacker News": "hacker_news",
+        "Show HN": "hacker_news",
+        "IndieHackers": "indie_hackers",
+        "Indie-Hackers": "indie_hackers",
         "dev.to": "devto",
+        "DEV": "devto",
+        "Dev To": "devto",
         "email": "email_update",
+        "Newsletter": "email_update",
+        "Update Email": "email_update",
+        "DM": "direct_reply",
+        "Direct Reply": "direct_reply",
+        "Reply": "direct_reply",
     }
 
     for alias, expected in aliases.items():
@@ -214,3 +230,20 @@ def test_campaign_day_normalizes_channel_aliases() -> None:
             tracking_goal="Replies.",
         )
         assert day.channel == expected
+
+
+def test_campaign_day_unsupported_channel_error_includes_raw_value_and_supported_ids() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        CampaignDay(
+            day=1,
+            channel="LinkedIn",
+            angle="Ask for feedback.",
+            cta="Open GitHub.",
+            reply_focus="Builder pain.",
+            objection_to_watch="Why now?",
+            tracking_goal="Replies.",
+        )
+
+    message = str(exc_info.value)
+    assert 'Unsupported campaign channel: "LinkedIn"' in message
+    assert "reddit, x_bluesky, indie_hackers, hacker_news, devto, email_update, direct_reply" in message

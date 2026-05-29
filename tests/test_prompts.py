@@ -56,6 +56,7 @@ def test_pr_native_prompts_include_campaign_posts_and_replies() -> None:
     campaign = build_campaign_prompt("Launch", product)
     assert "7-day product marketing campaign" in campaign
     assert "reply_focus" in campaign
+    assert "`channel` value must be exactly one of these machine IDs" in campaign
     assert "Do not imply anything will auto-post" in campaign
 
     posts = build_posts_prompt(product, "reddit", 3, goal="Launch")

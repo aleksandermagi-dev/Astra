@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -17,6 +18,15 @@ VALID_WORKFLOW_PLATFORMS = {
     "tiktok",
     "youtube_shorts",
 }
+VALID_CAMPAIGN_CHANNELS = {
+    "reddit",
+    "x_bluesky",
+    "indie_hackers",
+    "hacker_news",
+    "devto",
+    "email_update",
+    "direct_reply",
+}
 VALID_IDEA_PLATFORMS = VALID_WORKFLOW_PLATFORMS | {"all"}
 VALID_STATUSES = {"draft", "approved", "queued", "publishing", "posted", "failed"}
 VALID_WORKFLOW_STAGES = {"master", "platform_variant"}
@@ -25,24 +35,43 @@ VALID_SAFETY_DECISIONS = {"PASS", "REWRITE", "DISCARD"}
 VALID_SAFETY_DIMENSIONS = {"tone", "topic", "quality", "brand", "posting"}
 VALID_REPLY_SCENARIOS = {"skeptical_user", "interested_builder", "setup_lead", "why_not_readme_notion"}
 CHANNEL_ALIASES = {
+    "reddit": "reddit",
     "bluesky": "x_bluesky",
     "bsky": "x_bluesky",
     "x": "x_bluesky",
     "x bluesky": "x_bluesky",
-    "x/bluesky": "x_bluesky",
+    "x and bluesky": "x_bluesky",
+    "xbluesky": "x_bluesky",
     "x_bluesky": "x_bluesky",
+    "twitter": "x_bluesky",
+    "twitter x": "x_bluesky",
+    "twitterx": "x_bluesky",
     "hn": "hacker_news",
     "hacker news": "hacker_news",
+    "hackernews": "hacker_news",
     "hacker_news": "hacker_news",
+    "show hn": "hacker_news",
+    "showhn": "hacker_news",
+    "dev": "devto",
     "dev to": "devto",
-    "dev.to": "devto",
     "devto": "devto",
     "email": "email_update",
     "email update": "email_update",
     "email_update": "email_update",
+    "newsletter": "email_update",
+    "update email": "email_update",
+    "updateemail": "email_update",
     "indie hackers": "indie_hackers",
+    "indiehackers": "indie_hackers",
     "indie_hackers": "indie_hackers",
+    "dm": "direct_reply",
+    "direct reply": "direct_reply",
+    "directreply": "direct_reply",
+    "reply": "direct_reply",
 }
+SUPPORTED_CAMPAIGN_CHANNEL_TEXT = ", ".join(
+    ["reddit", "x_bluesky", "indie_hackers", "hacker_news", "devto", "email_update", "direct_reply"]
+)
 
 # Backward-compatible alias used by the older CLI/tests.
 VALID_PLATFORMS = set(VALID_IDEA_PLATFORMS)
@@ -58,8 +87,22 @@ def _clean_string(value: Any, field_name: str) -> str:
 
 
 def normalize_workflow_channel(value: Any, field_name: str = "channel") -> str:
-    cleaned = normalize_model_text(value, field_name).lower().replace("-", " ").strip()
-    normalized = CHANNEL_ALIASES.get(cleaned, cleaned.replace(" ", "_"))
+    raw = normalize_model_text(value, field_name)
+    cleaned = re.sub(r"([a-z])([A-Z])", r"\1 \2", raw).lower().strip()
+    spaced = re.sub(r"[_\\/\|\(\)\[\]\{\}\.,:;+&-]+", " ", cleaned)
+    spaced = re.sub(r"\s+", " ", spaced).strip()
+    compact = re.sub(r"[^a-z0-9]+", "", cleaned)
+    underscored = spaced.replace(" ", "_")
+    candidates = [spaced, compact, underscored]
+    normalized = next((CHANNEL_ALIASES[candidate] for candidate in candidates if candidate in CHANNEL_ALIASES), underscored)
+    return normalized
+
+
+def normalize_campaign_channel(value: Any, field_name: str = "channel") -> str:
+    raw = normalize_model_text(value, field_name)
+    normalized = normalize_workflow_channel(raw, field_name)
+    if normalized not in VALID_CAMPAIGN_CHANNELS:
+        raise ValueError(f'Unsupported campaign channel: "{raw}". Supported: {SUPPORTED_CAMPAIGN_CHANNEL_TEXT}.')
     return normalized
 
 
@@ -446,9 +489,7 @@ class CampaignDay:
     def __post_init__(self) -> None:
         if self.day < 1:
             raise ValueError("day must be >= 1.")
-        self.channel = normalize_workflow_channel(self.channel, "channel")
-        if self.channel not in VALID_WORKFLOW_PLATFORMS:
-            raise ValueError("channel must be a supported PR channel.")
+        self.channel = normalize_campaign_channel(self.channel, "channel")
         self.angle = normalize_model_text(self.angle, "angle")
         self.cta = normalize_model_text(self.cta, "cta")
         self.reply_focus = normalize_model_text(self.reply_focus, "reply_focus")

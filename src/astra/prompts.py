@@ -215,7 +215,7 @@ def build_campaign_prompt(goal: str, product_payload: dict[str, object], days: i
         }}
 
         Requirements:
-        - Use only supported channels: reddit, x_bluesky, indie_hackers, hacker_news, devto, email_update, direct_reply.
+        - The `channel` value must be exactly one of these machine IDs: reddit, x_bluesky, indie_hackers, hacker_news, devto, email_update, direct_reply.
         - Make the plan usable for a founder with no large audience.
         - Keep the tone practical, honest, non-hypey, and review-first.
         - Include trust boundaries and limitations when they matter.
