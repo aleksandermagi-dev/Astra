@@ -27,6 +27,7 @@ from astra.gui import (
     publish_queue_args,
     posts_args,
     product_names,
+    queue_status_text,
     replies_args,
     review_drafts_args,
     review_queue_args,
@@ -39,7 +40,7 @@ from astra.gui import (
 )
 from astra.config import AstraConfig
 from astra.models import WorkflowContentItem
-from astra.outputs import ensure_output_dirs, save_content_item
+from astra.outputs import approve_content_item, ensure_output_dirs, queue_content_item, save_content_item
 
 
 def test_gui_conversational_args_requires_text() -> None:
@@ -369,14 +370,37 @@ def _item(**overrides) -> WorkflowContentItem:
 def test_dashboard_item_loading_and_rows(tmp_path) -> None:
     dirs = ensure_output_dirs(tmp_path / "outputs")
     save_content_item(_item(id="draft111"), dirs["batches"] / "batch_1")
+    save_content_item(_item(id="appr1111", status="approved"), dirs["approved"])
     save_content_item(_item(id="queue111", status="queued"), dirs["queue"])
 
     drafts = load_dashboard_items("drafts", base_dir=tmp_path / "outputs")
+    queue_items = load_dashboard_items("queue", base_dir=tmp_path / "outputs")
     queue = item_summary_rows("queue", base_dir=tmp_path / "outputs")
 
     assert [item.item_id for item in drafts] == ["draft111"]
-    assert queue[0][0] == "queue111"
+    assert [item.item_id for item in queue_items] == ["appr1111", "queue111"]
+    assert [(row[0], row[2]) for row in queue] == [("appr1111", "approved"), ("queue111", "queued")]
     assert queue[0][1] == "x_bluesky"
+    assert queue_status_text(base_dir=tmp_path / "outputs") == "Queue: 1 queued / 1 approved"
+
+
+def test_approved_item_appears_in_queue_dashboard_until_it_is_queued(tmp_path) -> None:
+    dirs = ensure_output_dirs(tmp_path / "outputs")
+    draft_path = save_content_item(_item(id="draft111"), dirs["batches"] / "batch_1")
+
+    approved_path = approve_content_item(draft_path, base_dir=tmp_path / "outputs")
+
+    approved_queue_items = load_dashboard_items("queue", base_dir=tmp_path / "outputs")
+    assert [(item.item_id, item.status, item.path) for item in approved_queue_items] == [
+        ("draft111", "approved", approved_path)
+    ]
+
+    queued_path = queue_content_item(approved_path, base_dir=tmp_path / "outputs")
+
+    queued_dashboard_items = load_dashboard_items("queue", base_dir=tmp_path / "outputs")
+    assert [(item.item_id, item.status, item.path) for item in queued_dashboard_items] == [
+        ("draft111", "queued", queued_path)
+    ]
 
 
 def test_item_inspector_and_action_state(tmp_path) -> None:

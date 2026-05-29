@@ -326,7 +326,10 @@ def load_dashboard_items(kind: str = "drafts", *, base_dir: Path | None = None) 
     elif kind == "approved":
         paths = sorted(directories["approved"].glob("*.json"))
     elif kind in {"queue", "queued"}:
-        paths = sorted(directories["queue"].glob("*.json"))
+        paths = [
+            *sorted(directories["approved"].glob("*.json")),
+            *sorted(directories["queue"].glob("*.json")),
+        ]
     elif kind == "posted":
         paths = sorted(directories["posted"].glob("*.json"))
     elif kind == "all":
@@ -346,10 +349,19 @@ def load_dashboard_items(kind: str = "drafts", *, base_dir: Path | None = None) 
             continue
         if kind in {"drafts", "review"} and item.status != "draft":
             continue
+        if kind in {"queue", "queued"} and item.status not in {"approved", "queued"}:
+            continue
         if item.safety.decision == "DISCARD":
             continue
         items.append(_dashboard_item_from_workflow_item(item, path))
     return items
+
+
+def queue_status_text(*, base_dir: Path | None = None) -> str:
+    items = load_dashboard_items("queue", base_dir=base_dir)
+    queued_count = sum(1 for item in items if item.status == "queued")
+    approved_count = sum(1 for item in items if item.status == "approved")
+    return f"Queue: {queued_count} queued / {approved_count} approved"
 
 
 def item_summary_rows(kind: str = "drafts", *, base_dir: Path | None = None) -> list[tuple[str, str, str, str, str, str]]:
@@ -866,8 +878,7 @@ class AstraGuiApp:
         self.refresh_items("queue")
         self.refresh_publish_log()
         self.refresh_settings()
-        queue_count = len(load_dashboard_items("queue"))
-        self.queue_status_var.set(f"Queue: {queue_count}")
+        self.queue_status_var.set(queue_status_text())
         status = run_cli_capture(accounts_status_args(), cli_runner=self.cli_runner)
         summary = status.display_text.splitlines()[0] if status.display_text.splitlines() else "unknown"
         self.account_status_var.set(f"Accounts: {summary}")
