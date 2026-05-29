@@ -7,8 +7,11 @@ from pathlib import Path
 from typing import Any
 
 
+VALID_GENERATION_PROVIDERS = {"auto", "openai", "ollama"}
+DEFAULT_OLLAMA_MODEL = "llama3.1:8b"
+DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_AUDIENCE = [
-    "AI builders, solo developers, local-agent users, indie hackers, and technical buyers evaluating founder-built tools",
+    "AI builders, solo developers, local-agent users, indie hackers, authors, worldbuilders, and technical buyers evaluating founder-built tools",
 ]
 DEFAULT_TONE = [
     "practical builder",
@@ -40,7 +43,8 @@ DEFAULT_ACTIVE_PRODUCT = {
     "summary": (
         "Shared project memory for humans and AI agents. It scans a project folder, tracks current state, "
         "decisions, detected checks, drift risks, unresolved branches, and project health, then exposes compact "
-        "continuity packets through CLI/MCP so agents can resume work without huge pasted context."
+        "continuity packets through CLI/MCP so agents can resume work without huge pasted context. Creative-writing "
+        "continuity for authors, devs, worldbuilders, lore, character arcs, drafts, and story decisions is an expanding target market."
     ),
     "audience": [
         "AI builders",
@@ -49,6 +53,7 @@ DEFAULT_ACTIVE_PRODUCT = {
         "Codex / Claude / Cursor users",
         "indie hackers",
         "builders tired of repeating project context to AI tools",
+        "authors and worldbuilders managing lore, character arcs, drafts, and continuity drift",
     ],
     "offer": "$19 paid early access, with an optional $99 setup session through the feedback/setup form",
     "links": {
@@ -220,7 +225,10 @@ class VideoConfig:
 
 @dataclass(slots=True)
 class AstraConfig:
+    provider: str = "auto"
     model: str = "gpt-5-mini"
+    ollama_model: str = DEFAULT_OLLAMA_MODEL
+    ollama_url: str = DEFAULT_OLLAMA_URL
     default_platform: str = "all"
     default_count: int = 5
     default_post_time_slot: str = "afternoon"
@@ -246,7 +254,10 @@ class AstraConfig:
         if file_path.exists():
             data = json.loads(file_path.read_text(encoding="utf-8"))
         api_key = os.getenv("OPENAI_API_KEY")
+        provider = _normalize_provider(os.getenv("ASTRA_PROVIDER", str(data.get("provider", "auto"))))
         model = os.getenv("ASTRA_MODEL", data.get("model", "gpt-5-mini"))
+        ollama_model = os.getenv("ASTRA_OLLAMA_MODEL", str(data.get("ollama_model", DEFAULT_OLLAMA_MODEL)))
+        ollama_url = (os.getenv("ASTRA_OLLAMA_URL", str(data.get("ollama_url", DEFAULT_OLLAMA_URL)))).rstrip("/")
         active_product = dict(data.get("active_product", DEFAULT_ACTIVE_PRODUCT))
         raw_products = data.get("products")
         products = _load_product_profiles(raw_products, active_product)
@@ -254,7 +265,10 @@ class AstraConfig:
         if default_product not in products:
             products[default_product] = ProductProfile.from_mapping(active_product)
         return cls(
+            provider=provider,
             model=model,
+            ollama_model=ollama_model,
+            ollama_url=ollama_url,
             default_platform=str(data.get("default_platform", "all")),
             default_count=int(data.get("default_count", 5)),
             default_post_time_slot=str(data.get("default_post_time_slot", "afternoon")),
@@ -272,6 +286,29 @@ class AstraConfig:
             elevenlabs=ElevenLabsConfig.from_mapping(data.get("elevenlabs")),
             video=VideoConfig.from_mapping(data.get("video")),
             api_key=api_key,
+        )
+
+    @property
+    def active_provider(self) -> str:
+        if self.provider == "auto":
+            return "openai" if self.api_key else "ollama"
+        return _normalize_provider(self.provider)
+
+    @property
+    def active_generation_model(self) -> str:
+        return self.model if self.active_provider == "openai" else self.ollama_model
+
+    def generation_configured(self) -> bool:
+        if self.active_provider == "openai":
+            return bool(self.api_key)
+        return bool(self.ollama_model and self.ollama_url)
+
+    def generation_error_message(self) -> str:
+        if self.active_provider == "openai":
+            return "OPENAI_API_KEY is required when ASTRA_PROVIDER=openai."
+        return (
+            f"Ollama generation is selected but not configured. Set ASTRA_OLLAMA_MODEL and ASTRA_OLLAMA_URL, "
+            f"then open Ollama or run `ollama serve`. Current model: {self.ollama_model or 'missing'}."
         )
 
     def product_names(self) -> list[str]:
@@ -321,7 +358,10 @@ class AstraConfig:
         else:
             default_product = _slugify_product_name(product.name)
         return AstraConfig(
+            provider=self.provider,
             model=self.model,
+            ollama_model=self.ollama_model,
+            ollama_url=self.ollama_url,
             default_platform=self.default_platform,
             default_count=self.default_count,
             default_post_time_slot=self.default_post_time_slot,
@@ -340,6 +380,13 @@ class AstraConfig:
             video=self.video,
             api_key=self.api_key,
         )
+
+
+def _normalize_provider(value: str) -> str:
+    provider = str(value or "auto").strip().lower()
+    if provider not in VALID_GENERATION_PROVIDERS:
+        raise ValueError("ASTRA_PROVIDER must be auto, openai, or ollama.")
+    return provider
 
 
 def _slugify_product_name(name: str) -> str:

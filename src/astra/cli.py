@@ -338,8 +338,8 @@ def run_cli(
             return 0
 
         config = AstraConfig.load(getattr(args, "config", None))
-        if not config.api_key:
-            print("OPENAI_API_KEY is required for generation commands.", file=stderr)
+        if not config.generation_configured():
+            print(config.generation_error_message(), file=stderr)
             return 2
 
         if args.command in {"campaign", "posts", "replies"}:
@@ -352,7 +352,11 @@ def run_cli(
         generator = generator_factory(config)
 
         if args.command == "campaign":
-            plan = generator.generate_campaign_plan(goal=args.goal, days=args.days)
+            try:
+                plan = generator.generate_campaign_plan(goal=args.goal, days=args.days)
+            except (RuntimeError, ValueError) as exc:
+                print(str(exc), file=stderr)
+                return 1
             rendered = format_campaign_plan_markdown(plan)
             print(rendered)
             saved_path = save_generated_output(
@@ -366,12 +370,16 @@ def run_cli(
 
         if args.command == "posts":
             recent_items = load_recent_content_items()
-            items = generator.draft_product_posts(
-                channel=args.channel,
-                count=args.count,
-                goal=args.goal,
-                recent_items=recent_items,
-            )
+            try:
+                items = generator.draft_product_posts(
+                    channel=args.channel,
+                    count=args.count,
+                    goal=args.goal,
+                    recent_items=recent_items,
+                )
+            except (RuntimeError, ValueError) as exc:
+                print(str(exc), file=stderr)
+                return 1
             batch_dir = create_batch_run_dir()
             saved_paths = save_batch_items(items, batch_dir)
             print(format_workflow_items_text(items))
@@ -381,7 +389,11 @@ def run_cli(
             return 0
 
         if args.command == "replies":
-            reply = generator.draft_reply(scenario=args.scenario, user_signal=args.user_signal)
+            try:
+                reply = generator.draft_reply(scenario=args.scenario, user_signal=args.user_signal)
+            except (RuntimeError, ValueError) as exc:
+                print(str(exc), file=stderr)
+                return 1
             rendered = format_reply_draft_markdown(reply)
             print(rendered)
             saved_path = save_generated_output(
@@ -396,7 +408,11 @@ def run_cli(
         if args.command == "ideas":
             platform = args.platform or config.default_platform
             count = args.count or config.default_count
-            ideas = generator.generate_ideas(topic=args.topic, count=count, platform=platform)
+            try:
+                ideas = generator.generate_ideas(topic=args.topic, count=count, platform=platform)
+            except (RuntimeError, ValueError) as exc:
+                print(str(exc), file=stderr)
+                return 1
             rendered = format_ideas_text(ideas)
             print(rendered)
             saved_path = save_generated_output(content=rendered, topic=args.topic, kind="ideas")
@@ -414,7 +430,11 @@ def run_cli(
             safety_summaries: list[str] = []
             recent_items = load_recent_content_items()
             for topic in topics:
-                items = generator.generate_workflow_items(topic=topic, count=count, recent_items=recent_items)
+                try:
+                    items = generator.generate_workflow_items(topic=topic, count=count, recent_items=recent_items)
+                except (RuntimeError, ValueError) as exc:
+                    print(str(exc), file=stderr)
+                    return 1
                 all_posts.extend(
                     [
                         ContentPost(
@@ -457,7 +477,11 @@ def run_cli(
             for item in load_content_items(args.input):
                 if item.workflow_stage != "master":
                     continue
-                formatted = generator.format_for_platform(item, args.platform, recent_items=recent_items)
+                try:
+                    formatted = generator.format_for_platform(item, args.platform, recent_items=recent_items)
+                except (RuntimeError, ValueError) as exc:
+                    print(str(exc), file=stderr)
+                    return 1
                 formatted_items.append(formatted)
                 saved_paths.append(_save_formatted_item(args.input, formatted))
                 safety_summaries.append(_format_safety_summary(formatted))

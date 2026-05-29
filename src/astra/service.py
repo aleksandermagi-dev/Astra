@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from typing import Any, Protocol
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 from openai import OpenAI
 
@@ -24,7 +26,7 @@ class ResponseTransport(Protocol):
     def __call__(self, *, system_prompt: str, user_prompt: str, model: str) -> str: ...
 
 
-def default_transport(*, system_prompt: str, user_prompt: str, model: str) -> str:
+def openai_transport(*, system_prompt: str, user_prompt: str, model: str) -> str:
     client = OpenAI()
     response = client.responses.create(
         model=model,
@@ -46,10 +48,66 @@ def default_transport(*, system_prompt: str, user_prompt: str, model: str) -> st
     return "\n".join(parts)
 
 
+def ollama_transport_factory(*, base_url: str, ollama_model: str) -> ResponseTransport:
+    def transport(*, system_prompt: str, user_prompt: str, model: str) -> str:
+        prompt = "\n\n".join(
+            [
+                "System:",
+                system_prompt.strip(),
+                "User:",
+                user_prompt.strip(),
+                "Return only valid JSON. Do not wrap the JSON in Markdown.",
+            ]
+        )
+        payload = {
+            "model": ollama_model,
+            "prompt": prompt,
+            "stream": False,
+            "format": "json",
+        }
+        request = urlrequest.Request(
+            f"{base_url.rstrip('/')}/api/generate",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlrequest.urlopen(request, timeout=120) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urlerror.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace").strip()
+            detail = f" Ollama said: {body}" if body else ""
+            raise RuntimeError(
+                f"Ollama returned HTTP {exc.code} at {base_url}.{detail} "
+                f"Open Ollama or run `ollama serve`, and make sure `{ollama_model}` is installed."
+            ) from exc
+        except (OSError, urlerror.URLError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                f"Ollama is not reachable at {base_url}. Open Ollama or run `ollama serve`, "
+                f"and make sure `{ollama_model}` is installed."
+            ) from exc
+        text = str(data.get("response") or "").strip()
+        if not text:
+            raise RuntimeError("Ollama returned an empty response.")
+        return text
+
+    return transport
+
+
+def default_transport_for_config(config: AstraConfig) -> ResponseTransport:
+    if config.active_provider == "ollama":
+        return ollama_transport_factory(base_url=config.ollama_url, ollama_model=config.ollama_model)
+    return openai_transport
+
+
+# Backward-compatible name for callers that import the original transport.
+default_transport = openai_transport
+
+
 class AstraGenerator:
     def __init__(self, config: AstraConfig, transport: ResponseTransport | None = None) -> None:
         self.config = config
-        self.transport = transport or default_transport
+        self.transport = transport or default_transport_for_config(config)
         self.safety_layer = AstraSafetyLayer()
 
     def generate_ideas(
@@ -189,7 +247,7 @@ class AstraGenerator:
         raw = self.transport(
             system_prompt=build_system_prompt(self.config),
             user_prompt=user_prompt,
-            model=self.config.model,
+            model=self.config.active_generation_model,
         )
         try:
             return json.loads(_extract_json(raw))

@@ -1,6 +1,7 @@
 from astra.config import AstraConfig
 from astra.models import WorkflowContentItem
-from astra.service import AstraGenerator
+from astra.service import AstraGenerator, ollama_transport_factory
+import json
 
 
 def test_generator_parses_ideas_response() -> None:
@@ -11,6 +12,54 @@ def test_generator_parses_ideas_response() -> None:
     ideas = generator.generate_ideas(topic="AI", count=5, platform="tiktok")
     assert ideas[0].rank == 1
     assert ideas[0].topic == "AI shame spiral"
+
+
+def test_ollama_transport_sends_json_request(monkeypatch) -> None:
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps({"response": "{\"ideas\":[]}"}).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr("astra.service.urlrequest.urlopen", fake_urlopen)
+    transport = ollama_transport_factory(base_url="http://127.0.0.1:11434", ollama_model="llama3.1:8b")
+
+    result = transport(system_prompt="system", user_prompt="user", model="ignored")
+
+    assert result == "{\"ideas\":[]}"
+    assert captured["url"] == "http://127.0.0.1:11434/api/generate"
+    assert captured["payload"]["model"] == "llama3.1:8b"
+    assert captured["payload"]["stream"] is False
+    assert captured["payload"]["format"] == "json"
+    assert "System:" in captured["payload"]["prompt"]
+
+
+def test_ollama_transport_unavailable_has_clear_error(monkeypatch) -> None:
+    def fake_urlopen(request, timeout):
+        raise OSError("offline")
+
+    monkeypatch.setattr("astra.service.urlrequest.urlopen", fake_urlopen)
+    transport = ollama_transport_factory(base_url="http://127.0.0.1:11434", ollama_model="llama3.1:8b")
+
+    try:
+        transport(system_prompt="system", user_prompt="user", model="ignored")
+    except RuntimeError as exc:
+        assert "Ollama is not reachable" in str(exc)
+        assert "ollama serve" in str(exc)
+    else:
+        raise AssertionError("Expected Ollama transport to fail clearly.")
 
 
 def test_generator_rewrites_weak_post() -> None:

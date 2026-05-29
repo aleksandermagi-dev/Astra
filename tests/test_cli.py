@@ -506,8 +506,27 @@ def test_cli_tendril_create_list_approve_run_flow(monkeypatch, tmp_path) -> None
     assert (tmp_path / "outputs" / "tendril" / "workspaces" / "launch-notes" / "summary.md").exists()
 
 
-def test_cli_requires_api_key_for_generation(monkeypatch) -> None:
+def test_cli_uses_ollama_provider_without_openai_key(monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ASTRA_PROVIDER", "ollama")
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    exit_code = run_cli(
+        ["ideas", "--topic", "AI myths"],
+        stdout=stdout,
+        stderr=stderr,
+        generator_factory=FakeGenerator,
+    )
+
+    assert exit_code == 0
+    assert "AI myths idea" in stdout.getvalue()
+    assert stderr.getvalue() == ""
+
+
+def test_cli_requires_api_key_for_explicit_openai_generation(monkeypatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("ASTRA_PROVIDER", "openai")
     stdout = io.StringIO()
     stderr = io.StringIO()
 
@@ -519,7 +538,7 @@ def test_cli_requires_api_key_for_generation(monkeypatch) -> None:
     )
 
     assert exit_code == 2
-    assert "OPENAI_API_KEY is required" in stderr.getvalue()
+    assert "OPENAI_API_KEY is required when ASTRA_PROVIDER=openai" in stderr.getvalue()
 
 
 def test_cli_analyze_prints_summary(tmp_path) -> None:

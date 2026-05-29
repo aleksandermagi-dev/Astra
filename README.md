@@ -22,6 +22,8 @@ Stop re-explaining your project to AI.
 
 Continuity Layer is shared project memory for humans and AI agents. It scans a project folder, tracks current state, decisions, detected checks, drift risks, unresolved branches, and project health. It exposes compact continuity packets through CLI/MCP so tools like Codex, Claude, Cursor-style agents, or local agents can resume work without pasted context.
 
+Creative-writing continuity for authors, devs, worldbuilders, lore, character arcs, drafts, and story decisions is an expanding target market.
+
 Offer:
 
 - $19 paid early access
@@ -181,11 +183,16 @@ Use `company` in the GUI product selector when the draft should be about Linnute
 
 ## Configuration
 
-Set `OPENAI_API_KEY` to enable generation.
+By default, Astra uses local Ollama generation when `OPENAI_API_KEY` is missing. Open Ollama or run `ollama serve`, and make sure `llama3.1:8b` is installed.
+
+Optional OpenAI generation is still supported by setting `OPENAI_API_KEY`.
 
 Optional environment variables:
 
+- `ASTRA_PROVIDER` (`auto`, `ollama`, or `openai`)
 - `ASTRA_MODEL`
+- `ASTRA_OLLAMA_MODEL`
+- `ASTRA_OLLAMA_URL`
 - `ASTRA_CONFIG`
 - `ASTRA_BLUESKY_HANDLE`
 - `ASTRA_BLUESKY_APP_PASSWORD`

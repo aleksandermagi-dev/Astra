@@ -321,6 +321,9 @@ def item_action_state(path: str | Path) -> dict[str, bool]:
 def settings_status_lines(config: AstraConfig | None = None) -> list[str]:
     loaded = config or AstraConfig.load()
     return [
+        f"Generation provider: {loaded.active_provider} ({loaded.provider})",
+        f"Generation model: {loaded.active_generation_model}",
+        f"Ollama URL: {loaded.ollama_url}",
         f"OpenAI API key: {'configured' if bool(loaded.api_key) else 'missing'}",
         f"Bluesky handle: {'configured' if bool(loaded.bluesky_posting.handle) else 'missing'}",
         f"Bluesky app password: {'configured' if bool(loaded.bluesky_posting.app_password) else 'missing'}",

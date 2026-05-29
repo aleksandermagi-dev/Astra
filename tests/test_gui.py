@@ -299,5 +299,7 @@ def test_settings_status_lines_do_not_expose_secrets() -> None:
     config = AstraConfig(api_key="secret", bluesky_posting=AstraConfig().bluesky_posting)
     lines = settings_status_lines(config)
 
+    assert any("Generation provider: openai" in line for line in lines)
+    assert any("Generation model: gpt-5-mini" in line for line in lines)
     assert any("OpenAI API key: configured" in line for line in lines)
     assert "secret" not in "\n".join(lines)

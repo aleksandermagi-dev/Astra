@@ -1,7 +1,10 @@
 {
   "default_platform": "all",
   "default_count": 5,
+  "provider": "auto",
   "model": "gpt-5-mini",
+  "ollama_model": "llama3.1:8b",
+  "ollama_url": "http://127.0.0.1:11434",
   "bluesky_posting": {
     "service_url": "https://bsky.social"
   },
@@ -12,14 +15,15 @@
     {
       "name": "Continuity Layer",
       "positioning": "Stop re-explaining your project to AI.",
-      "summary": "Continuity Layer is shared project memory for humans and AI agents. It scans a project folder, tracks current state, decisions, detected checks, drift risks, unresolved branches, and project health. It exposes compact continuity packets through CLI/MCP so tools like Codex, Claude, Cursor-style agents, or local agents can resume work without the user pasting huge context again.",
+      "summary": "Continuity Layer is shared project memory for humans and AI agents. It scans a project folder, tracks current state, decisions, detected checks, drift risks, unresolved branches, and project health. It exposes compact continuity packets through CLI/MCP so tools like Codex, Claude, Cursor-style agents, or local agents can resume work without the user pasting huge context again. Creative-writing continuity for authors, devs, worldbuilders, lore, character arcs, drafts, and story decisions is an expanding target market.",
       "audience": [
         "AI builders",
         "solo developers",
         "local-agent users",
         "Codex / Claude / Cursor users",
         "indie hackers",
-        "builders tired of repeating project context to AI tools"
+        "builders tired of repeating project context to AI tools",
+        "authors and worldbuilders managing lore, character arcs, drafts, and continuity drift"
       ],
       "offer": "$19 paid early access, with an optional $99 setup session through the feedback/setup form",
       "links": {
@@ -41,14 +45,15 @@
   "active_product": {
     "name": "Continuity Layer",
     "positioning": "Stop re-explaining your project to AI.",
-    "summary": "Continuity Layer is shared project memory for humans and AI agents. It scans a project folder, tracks current state, decisions, detected checks, drift risks, unresolved branches, and project health. It exposes compact continuity packets through CLI/MCP so tools like Codex, Claude, Cursor-style agents, or local agents can resume work without the user pasting huge context again.",
+    "summary": "Continuity Layer is shared project memory for humans and AI agents. It scans a project folder, tracks current state, decisions, detected checks, drift risks, unresolved branches, and project health. It exposes compact continuity packets through CLI/MCP so tools like Codex, Claude, Cursor-style agents, or local agents can resume work without the user pasting huge context again. Creative-writing continuity for authors, devs, worldbuilders, lore, character arcs, drafts, and story decisions is an expanding target market.",
     "audience": [
       "AI builders",
       "solo developers",
       "local-agent users",
       "Codex / Claude / Cursor users",
       "indie hackers",
-      "builders tired of repeating project context to AI tools"
+      "builders tired of repeating project context to AI tools",
+      "authors and worldbuilders managing lore, character arcs, drafts, and continuity drift"
     ],
     "offer": "$19 paid early access, with an optional $99 setup session through the feedback/setup form",
     "links": {
@@ -67,7 +72,7 @@
     ]
   },
   "audience": [
-    "AI builders, solo developers, local-agent users, indie hackers, and technical buyers evaluating founder-built tools"
+    "AI builders, solo developers, local-agent users, indie hackers, authors, worldbuilders, and technical buyers evaluating founder-built tools"
   ],
   "tone": [
     "practical builder",
