@@ -292,6 +292,25 @@ def test_cli_format_approve_queue_and_log_workflow(monkeypatch, tmp_path) -> Non
     assert "queued" in stdout.getvalue()
 
 
+def test_cli_clear_review_drafts_deletes_only_draft_review_items(monkeypatch, tmp_path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("astra.outputs.default_outputs_root", lambda: tmp_path / "outputs")
+    dirs = ensure_output_dirs(tmp_path / "outputs")
+    draft_path = save_content_item(_sample_master_item(), dirs["batches"] / "batch_20260329_120000")
+    approved_path = save_content_item(_sample_master_item().with_updates(id="appr1111", status="approved"), dirs["approved"])
+    queued_path = save_content_item(_sample_master_item().with_updates(id="queue111", status="queued"), dirs["queue"])
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+
+    exit_code = run_cli(["clear-review-drafts"], stdout=stdout, stderr=stderr)
+
+    assert exit_code == 0
+    assert "Cleared 1 review draft item(s)." in stdout.getvalue()
+    assert not draft_path.exists()
+    assert approved_path.exists()
+    assert queued_path.exists()
+
+
 def test_cli_supports_conversational_format_request(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.chdir(tmp_path)

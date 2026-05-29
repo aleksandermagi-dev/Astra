@@ -3,6 +3,7 @@ from __future__ import annotations
 from astra.gui import (
     batch_args,
     campaign_args,
+    clear_review_drafts_args,
     conversational_args,
     continuity_launch_pack_commands,
     format_latest_args,
@@ -70,6 +71,7 @@ def test_gui_quick_action_args() -> None:
     assert market_log_args(save=True) == ["market-log-template", "--format", "md", "--save"]
     assert tendril_list_args() == ["tendril", "list"]
     assert review_drafts_args() == ["review-drafts"]
+    assert clear_review_drafts_args() == ["clear-review-drafts"]
     assert review_queue_args() == ["review-queue"]
     assert approve_item_args(r"C:\draft.json") == ["approve", "--input", r"C:\draft.json"]
     assert queue_item_args(r"C:\approved.json", "morning") == ["queue", "--input", r"C:\approved.json", "--slot", "morning"]

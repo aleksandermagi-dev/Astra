@@ -10,6 +10,7 @@ from astra.outputs import (
     append_analytics_log,
     approve_content_item,
     build_timestamped_filename,
+    clear_review_draft_files,
     create_ready_output_dir,
     ensure_output_dirs,
     mark_content_item_posted,
@@ -167,3 +168,20 @@ def test_review_draft_items_excludes_discarded_content(tmp_path) -> None:
     reviewed = outputs.review_draft_items(tmp_path / "outputs")
 
     assert [item.id for item in reviewed] == ["pass1234"]
+
+
+def test_clear_review_draft_files_deletes_only_batch_drafts(tmp_path) -> None:
+    dirs = ensure_output_dirs(tmp_path / "outputs")
+    batch_dir = dirs["batches"] / "batch_20260330_120000"
+    draft_path = save_content_item(_sample_item(id="draft123"), batch_dir)
+    approved_in_batch = save_content_item(_sample_item(id="appr1234", status="approved"), batch_dir)
+    queued_path = save_content_item(_sample_item(id="queue123", status="queued"), dirs["queue"])
+    approved_path = save_content_item(_sample_item(id="appr5678", status="approved"), dirs["approved"])
+
+    removed = clear_review_draft_files(tmp_path / "outputs")
+
+    assert removed == [draft_path]
+    assert not draft_path.exists()
+    assert approved_in_batch.exists()
+    assert queued_path.exists()
+    assert approved_path.exists()

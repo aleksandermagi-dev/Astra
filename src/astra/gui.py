@@ -5,6 +5,7 @@ import io
 from pathlib import Path
 import threading
 import tkinter as tk
+from tkinter import messagebox
 from tkinter import ttk
 from typing import Callable, Sequence
 
@@ -257,6 +258,10 @@ def tendril_list_args() -> list[str]:
 
 def review_drafts_args() -> list[str]:
     return ["review-drafts"]
+
+
+def clear_review_drafts_args() -> list[str]:
+    return ["clear-review-drafts"]
 
 
 def review_queue_args() -> list[str]:
@@ -597,6 +602,8 @@ class AstraGuiApp:
         toolbar = ttk.Frame(frame)
         toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
         ttk.Button(toolbar, text="Refresh", command=lambda k=kind: self.refresh_items(k)).pack(side="left", padx=(0, 6))
+        if kind == "drafts":
+            ttk.Button(toolbar, text="Clear Review", command=self.clear_review_drafts).pack(side="left", padx=(0, 6))
         if kind == "queue":
             ttk.Button(toolbar, text="Publish Bluesky Queue", command=lambda: self.run_command(publish_queue_args("bluesky"))).pack(side="left", padx=(0, 6))
         ttk.Button(toolbar, text="Open Outputs", command=self.open_outputs).pack(side="right")
@@ -781,6 +788,15 @@ class AstraGuiApp:
             "Running... local model is working and may take a minute.",
             lambda _progress: run_cli_capture(args, cli_runner=self.cli_runner),
         )
+
+    def clear_review_drafts(self) -> None:
+        confirmed = messagebox.askyesno(
+            "Clear Review",
+            "Delete all draft items from the Review pile?\n\nApproved, queued, posted, logs, replies, and campaigns will not be changed.",
+            parent=self.root,
+        )
+        if confirmed:
+            self.run_command(clear_review_drafts_args())
 
     def run_background_job(
         self,

@@ -245,6 +245,27 @@ def review_draft_items(base_dir: Path | None = None) -> list[WorkflowContentItem
     return [item for item in items if item.status == "draft" and item.safety.decision != "DISCARD"]
 
 
+def clear_review_draft_files(base_dir: Path | None = None) -> list[Path]:
+    directories = ensure_output_dirs(base_dir)
+    removed: list[Path] = []
+    batches_root = directories["batches"]
+    for candidate in sorted(batches_root.rglob("*.json")):
+        try:
+            item = load_content_item(candidate)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if item.status != "draft":
+            continue
+        candidate.unlink()
+        removed.append(candidate)
+    for directory in sorted((path for path in batches_root.rglob("*") if path.is_dir()), key=lambda path: len(path.parts), reverse=True):
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+    return removed
+
+
 def load_recent_content_items(base_dir: Path | None = None, *, include_drafts: bool = False) -> list[WorkflowContentItem]:
     directories = ensure_output_dirs(base_dir)
     items: list[WorkflowContentItem] = []

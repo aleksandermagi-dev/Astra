@@ -37,6 +37,7 @@ from .models import (
 )
 from .outputs import (
     append_analytics_log,
+    clear_review_draft_files,
     load_publish_log,
     approve_content_item,
     create_batch_run_dir,
@@ -82,6 +83,7 @@ KNOWN_COMMANDS = {
     "publish-queue",
     "publish-log",
     "review-drafts",
+    "clear-review-drafts",
     "approve",
     "queue",
     "review-queue",
@@ -118,6 +120,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     review_drafts_parser = subparsers.add_parser("review-drafts", help="List draft items")
     review_drafts_parser.add_argument("--config")
+
+    subparsers.add_parser("clear-review-drafts", help="Delete draft items from the Review pile")
 
     market_log_parser = subparsers.add_parser("market-log-template", help="Print a simple market response log template")
     market_log_parser.add_argument("--format", choices=["csv", "md"], default="md")
@@ -303,6 +307,13 @@ def run_cli(
         if args.command == "review-drafts":
             items = review_draft_items()
             print(format_queue_summary(items))
+            return 0
+
+        if args.command == "clear-review-drafts":
+            removed = clear_review_draft_files()
+            print(f"Cleared {len(removed)} review draft item(s).")
+            if removed:
+                print("Approved, queued, posted, logs, replies, and campaign files were not changed.")
             return 0
 
         if args.command == "review-queue":
@@ -781,6 +792,9 @@ def _interpret_conversational_request(request: str) -> list[str]:
 
     if any(phrase in lowered for phrase in ("review queue", "show queue", "open queue")):
         return ["review-queue"]
+
+    if any(phrase in lowered for phrase in ("clear review", "clear drafts", "delete review drafts", "empty review")):
+        return ["clear-review-drafts"]
 
     if any(phrase in lowered for phrase in ("review drafts", "show drafts", "list drafts")):
         return ["review-drafts"]
