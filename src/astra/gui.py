@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import io
 from pathlib import Path
+import threading
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Sequence
@@ -149,10 +150,55 @@ def continuity_launch_pack_commands() -> list[list[str]]:
     ]
 
 
-def run_launch_pack_commands(*, cli_runner: CliRunner = run_cli) -> GuiCommandResult:
+def describe_launch_pack_command(args: Sequence[str]) -> str:
+    if args[:2] == ["campaign", "create"]:
+        return "creating 7-day campaign plan"
+    if args[:2] == ["posts", "draft"]:
+        channel = _arg_value(args, "--channel")
+        labels = {
+            "x_bluesky": "drafting Bluesky posts",
+            "reddit": "drafting Reddit posts",
+            "hacker_news": "drafting Hacker News draft",
+            "indie_hackers": "drafting Indie Hackers draft",
+        }
+        return labels.get(channel, f"drafting {channel or 'platform'} posts")
+    if args[:2] == ["replies", "draft"]:
+        scenario = _arg_value(args, "--scenario")
+        labels = {
+            "skeptical_user": "drafting skeptical-user reply",
+            "why_not_readme_notion": "drafting README/Notion reply",
+        }
+        return labels.get(scenario, f"drafting {scenario or 'reply'} response")
+    if args and args[0] == "market-log-template":
+        return "saving market log template"
+    return "running Astra command"
+
+
+def launch_pack_progress_messages(commands: Sequence[Sequence[str]] | None = None) -> list[str]:
+    selected_commands = list(commands or continuity_launch_pack_commands())
+    total = len(selected_commands)
+    return [
+        f"Step {index}/{total}: {describe_launch_pack_command(args)}"
+        for index, args in enumerate(selected_commands, start=1)
+    ]
+
+
+def busy_button_state(is_busy: bool) -> str:
+    return "disabled" if is_busy else "normal"
+
+
+def run_launch_pack_commands(
+    *,
+    cli_runner: CliRunner = run_cli,
+    progress_callback: Callable[[str], None] | None = None,
+) -> GuiCommandResult:
     sections = ["Continuity Layer Launch Pack", ""]
     failures = 0
-    for index, args in enumerate(continuity_launch_pack_commands(), start=1):
+    commands = continuity_launch_pack_commands()
+    progress_messages = launch_pack_progress_messages(commands)
+    for index, args in enumerate(commands, start=1):
+        if progress_callback is not None:
+            progress_callback(progress_messages[index - 1])
         result = run_cli_capture(args, cli_runner=cli_runner)
         status = "OK" if result.ok else "FAILED"
         if not result.ok:
@@ -320,7 +366,7 @@ def item_action_state(path: str | Path) -> dict[str, bool]:
 
 def settings_status_lines(config: AstraConfig | None = None) -> list[str]:
     loaded = config or AstraConfig.load()
-    return [
+    lines = [
         f"Generation provider: {loaded.active_provider} ({loaded.provider})",
         f"Generation model: {loaded.active_generation_model}",
         f"Ollama URL: {loaded.ollama_url}",
@@ -330,6 +376,20 @@ def settings_status_lines(config: AstraConfig | None = None) -> list[str]:
         f"Bluesky service URL: {loaded.bluesky_posting.service_url}",
         "Secrets are read from environment variables and are not displayed.",
     ]
+    if not loaded.bluesky_posting.handle or not loaded.bluesky_posting.app_password:
+        lines.append("If you just configured Bluesky credentials, restart Astra so the app can read them.")
+    return lines
+
+
+def _arg_value(args: Sequence[str], flag: str) -> str | None:
+    try:
+        index = list(args).index(flag)
+    except ValueError:
+        return None
+    next_index = index + 1
+    if next_index >= len(args):
+        return None
+    return args[next_index]
 
 
 def _dashboard_item_from_workflow_item(item: WorkflowContentItem, path: Path) -> DashboardItem:
@@ -368,6 +428,7 @@ class AstraGuiApp:
         self.queue_status_var = tk.StringVar(value="Queue: 0")
         self.current_item_path: Path | None = None
         self.current_tree_kind = "drafts"
+        self.is_busy = False
 
         self._build_ui()
 
@@ -614,17 +675,45 @@ class AstraGuiApp:
         self.run_command(args)
 
     def run_continuity_launch_pack(self) -> None:
-        self.status_var.set("Creating launch pack...")
-        self.root.update_idletasks()
-        result = run_launch_pack_commands(cli_runner=self.cli_runner)
-        self.show_message(result.display_text, ok=result.ok)
-        self.refresh_dashboard()
+        self.run_background_job(
+            "Creating launch pack... local model is working and may take a minute.",
+            lambda progress: run_launch_pack_commands(cli_runner=self.cli_runner, progress_callback=progress),
+        )
 
     def run_command(self, args: Sequence[str]) -> None:
-        self.status_var.set("Running...")
-        self.root.update_idletasks()
-        result = run_cli_capture(args, cli_runner=self.cli_runner)
+        self.run_background_job(
+            "Running... local model is working and may take a minute.",
+            lambda _progress: run_cli_capture(args, cli_runner=self.cli_runner),
+        )
+
+    def run_background_job(
+        self,
+        initial_status: str,
+        worker: Callable[[Callable[[str], None]], GuiCommandResult],
+    ) -> None:
+        if self.is_busy:
+            self.show_message("Astra is already running a task. Wait for it to finish before starting another.", ok=False)
+            return
+        self.is_busy = True
+        self.status_var.set(initial_status)
+        self._set_action_buttons_busy(True)
+
+        def progress(message: str) -> None:
+            self.root.after(0, lambda: self.status_var.set(f"{message} - local model is working."))
+
+        def target() -> None:
+            try:
+                result = worker(progress)
+            except Exception as exc:
+                result = GuiCommandResult(exit_code=1, output="", error=str(exc))
+            self.root.after(0, lambda: self.finish_background_job(result))
+
+        threading.Thread(target=target, daemon=True).start()
+
+    def finish_background_job(self, result: GuiCommandResult) -> None:
         self.show_message(result.display_text, ok=result.ok)
+        self.is_busy = False
+        self._set_action_buttons_busy(False)
         self.refresh_dashboard()
 
     def show_message(self, message: str, *, ok: bool = True) -> None:
@@ -748,6 +837,18 @@ class AstraGuiApp:
         actions: dict[str, ttk.Button] = inspector["actions"]
         for name, button in actions.items():
             button.configure(state="normal" if states.get(name, False) else "disabled")
+
+    def _set_action_buttons_busy(self, is_busy: bool) -> None:
+        for button in self._iter_buttons(self.root):
+            button.configure(state=busy_button_state(is_busy))
+
+    def _iter_buttons(self, widget: tk.Widget) -> list[ttk.Button]:
+        buttons: list[ttk.Button] = []
+        for child in widget.winfo_children():
+            if isinstance(child, ttk.Button):
+                buttons.append(child)
+            buttons.extend(self._iter_buttons(child))
+        return buttons
 
 
 def main() -> int:

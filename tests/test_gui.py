@@ -15,7 +15,10 @@ from astra.gui import (
     accounts_status_args,
     approve_item_args,
     queue_item_args,
+    busy_button_state,
     mark_posted_args,
+    describe_launch_pack_command,
+    launch_pack_progress_messages,
     publish_item_args,
     publish_log_args,
     publish_queue_args,
@@ -178,18 +181,36 @@ def test_continuity_launch_pack_commands_are_exact_and_ordered() -> None:
     ]
 
 
+def test_launch_pack_progress_messages_are_ordered() -> None:
+    messages = launch_pack_progress_messages()
+
+    assert messages == [
+        "Step 1/8: creating 7-day campaign plan",
+        "Step 2/8: drafting Bluesky posts",
+        "Step 3/8: drafting Reddit posts",
+        "Step 4/8: drafting Hacker News draft",
+        "Step 5/8: drafting Indie Hackers draft",
+        "Step 6/8: drafting skeptical-user reply",
+        "Step 7/8: drafting README/Notion reply",
+        "Step 8/8: saving market log template",
+    ]
+    assert describe_launch_pack_command(["unknown"]) == "running Astra command"
+
+
 def test_run_launch_pack_commands_summarizes_success() -> None:
     calls = []
+    progress = []
 
     def fake_runner(argv, *, stdout, stderr):
         calls.append(argv)
         stdout.write(f"saved {' '.join(argv[:2])}")
         return 0
 
-    result = run_launch_pack_commands(cli_runner=fake_runner)
+    result = run_launch_pack_commands(cli_runner=fake_runner, progress_callback=progress.append)
 
     assert result.ok is True
     assert calls == continuity_launch_pack_commands()
+    assert progress == launch_pack_progress_messages()
     assert "Launch pack created as drafts" in result.display_text
     assert "OK: campaign create" in result.display_text
 
@@ -208,6 +229,11 @@ def test_run_launch_pack_commands_summarizes_partial_failure() -> None:
     assert "FAILED: posts draft" in result.display_text
     assert "missing OPENAI_API_KEY" in result.display_text
     assert "No approval, queue, or publish action was run" in result.display_text
+
+
+def test_busy_button_state_maps_to_tk_states() -> None:
+    assert busy_button_state(True) == "disabled"
+    assert busy_button_state(False) == "normal"
 
 
 def test_gui_batch_args_requires_topic() -> None:
@@ -303,3 +329,9 @@ def test_settings_status_lines_do_not_expose_secrets() -> None:
     assert any("Generation model: gpt-5-mini" in line for line in lines)
     assert any("OpenAI API key: configured" in line for line in lines)
     assert "secret" not in "\n".join(lines)
+
+
+def test_settings_status_lines_include_bluesky_restart_guidance() -> None:
+    lines = settings_status_lines(AstraConfig())
+
+    assert any("restart Astra" in line for line in lines)
