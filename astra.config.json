@@ -15,7 +15,7 @@
     {
       "name": "Continuity Layer",
       "positioning": "Stop re-explaining your project to AI.",
-      "summary": "Continuity Layer is shared project memory for humans and AI agents. It scans a project folder, tracks current state, decisions, detected checks, drift risks, unresolved branches, and project health. It exposes compact continuity packets through CLI/MCP so tools like Codex, Claude, Cursor-style agents, or local agents can resume work without the user pasting huge context again. Creative-writing continuity for authors, devs, worldbuilders, lore, character arcs, drafts, and story decisions is an expanding target market.",
+      "summary": "Continuity Layer is shared project memory for humans and AI agents. It scans a project folder, tracks current state, decisions, detected checks, drift risks, unresolved branches, and project health. It exports compact continuity packets so builders can resume work without pasting huge context again. CLI/MCP connectors remain a private developer preview until separately licensed packaging is ready. Creative-writing continuity for authors, devs, worldbuilders, lore, character arcs, drafts, and story decisions is an expanding target market.",
       "audience": [
         "AI builders",
         "solo developers",
@@ -25,11 +25,9 @@
         "builders tired of repeating project context to AI tools",
         "authors and worldbuilders managing lore, character arcs, drafts, and continuity drift"
       ],
-      "offer": "$19 paid early access, with an optional $99 setup session through the feedback/setup form",
+      "offer": "$19.99/month Windows desktop subscription",
       "links": {
-        "github": "https://github.com/aleksandermagi-dev/ContinuityAgent",
-        "checkout": "https://linnuteeinnovations.lemonsqueezy.com/checkout/buy/d672a3ab-665e-488d-ba78-44f59c0b0140",
-        "feedback_setup": "https://tally.so/r/VLbJVy"
+        "checkout": "https://linnuteeinnovations.lemonsqueezy.com/checkout/buy/d672a3ab-665e-488d-ba78-44f59c0b0140"
       },
       "trust_points": [
         "local-first",
@@ -38,14 +36,15 @@
         "no silent file mutation",
         "detected commands are recommended, not auto-run",
         "agent updates create drafts until reviewed",
-        "installer is not code-signed yet, so Windows may warn users"
+        "installer is not code-signed yet, so Windows may warn users",
+        "Lemon Squeezy subscription validation is online; project files, scans, and SQLite memory stay local"
       ]
     }
   ],
   "active_product": {
     "name": "Continuity Layer",
     "positioning": "Stop re-explaining your project to AI.",
-    "summary": "Continuity Layer is shared project memory for humans and AI agents. It scans a project folder, tracks current state, decisions, detected checks, drift risks, unresolved branches, and project health. It exposes compact continuity packets through CLI/MCP so tools like Codex, Claude, Cursor-style agents, or local agents can resume work without the user pasting huge context again. Creative-writing continuity for authors, devs, worldbuilders, lore, character arcs, drafts, and story decisions is an expanding target market.",
+    "summary": "Continuity Layer is shared project memory for humans and AI agents. It scans a project folder, tracks current state, decisions, detected checks, drift risks, unresolved branches, and project health. It exports compact continuity packets so builders can resume work without pasting huge context again. CLI/MCP connectors remain a private developer preview until separately licensed packaging is ready. Creative-writing continuity for authors, devs, worldbuilders, lore, character arcs, drafts, and story decisions is an expanding target market.",
     "audience": [
       "AI builders",
       "solo developers",
@@ -55,11 +54,9 @@
       "builders tired of repeating project context to AI tools",
       "authors and worldbuilders managing lore, character arcs, drafts, and continuity drift"
     ],
-    "offer": "$19 paid early access, with an optional $99 setup session through the feedback/setup form",
+    "offer": "$19.99/month Windows desktop subscription",
     "links": {
-      "github": "https://github.com/aleksandermagi-dev/ContinuityAgent",
-      "checkout": "https://linnuteeinnovations.lemonsqueezy.com/checkout/buy/d672a3ab-665e-488d-ba78-44f59c0b0140",
-      "feedback_setup": "https://tally.so/r/VLbJVy"
+      "checkout": "https://linnuteeinnovations.lemonsqueezy.com/checkout/buy/d672a3ab-665e-488d-ba78-44f59c0b0140"
     },
     "trust_points": [
       "local-first",
@@ -68,7 +65,8 @@
       "no silent file mutation",
       "detected commands are recommended, not auto-run",
       "agent updates create drafts until reviewed",
-      "installer is not code-signed yet, so Windows may warn users"
+      "installer is not code-signed yet, so Windows may warn users",
+      "Lemon Squeezy subscription validation is online; project files, scans, and SQLite memory stay local"
     ]
   },
   "audience": [

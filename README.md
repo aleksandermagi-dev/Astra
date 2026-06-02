@@ -20,20 +20,17 @@ Continuity Layer positioning:
 Stop re-explaining your project to AI.
 ```
 
-Continuity Layer is shared project memory for humans and AI agents. It scans a project folder, tracks current state, decisions, detected checks, drift risks, unresolved branches, and project health. It exposes compact continuity packets through CLI/MCP so tools like Codex, Claude, Cursor-style agents, or local agents can resume work without pasted context.
+Continuity Layer is shared project memory for humans and AI agents. It scans a project folder, tracks current state, decisions, detected checks, drift risks, unresolved branches, and project health. It exports compact continuity packets so builders can resume work without pasted context. CLI/MCP connectors remain a private developer preview until separately licensed packaging is ready.
 
 Creative-writing continuity for authors, devs, worldbuilders, lore, character arcs, drafts, and story decisions is an expanding target market.
 
 Offer:
 
-- $19 paid early access
-- Optional $99 setup session through the feedback/setup form
+- $19.99/month Windows desktop subscription
 
 Links:
 
-- GitHub: https://github.com/aleksandermagi-dev/ContinuityAgent
 - Checkout: https://linnuteeinnovations.lemonsqueezy.com/checkout/buy/d672a3ab-665e-488d-ba78-44f59c0b0140
-- Feedback/setup form: https://tally.so/r/VLbJVy
 
 Trust points:
 
@@ -44,6 +41,7 @@ Trust points:
 - detected commands are recommended, not auto-run
 - agent updates create drafts until reviewed
 - installer is not code-signed yet, so Windows may warn users
+- Lemon Squeezy subscription validation is online; project files, scans, and SQLite memory stay local
 
 ## Fast Start
 
